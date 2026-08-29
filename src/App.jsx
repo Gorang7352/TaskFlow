@@ -1,8 +1,7 @@
 import "./App.css";
 import { useEffect, useMemo, useState } from "react";
-
-const API = "http://localhost:5000/api/tasks";
-const AUTH_API = "http://localhost:5000/api/auth";
+const API = "https://taskflow-backend-b6m6.onrender.com/api/tasks";
+const AUTH_API = "https://taskflow-backend-b6m6.onrender.com/api/auth";
 
 const CATEGORIES = ["Work", "Study", "Personal", "Shopping", "Other"];
 
