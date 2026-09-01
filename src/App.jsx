@@ -1,8 +1,7 @@
 import "./App.css";
 import { useEffect, useMemo, useState } from "react";
-const API = "https://taskflow-backend-b6m6.onrender.com/api/tasks";
-const AUTH_API = "https://taskflow-backend-b6m6.onrender.com/api/auth";
-
+const API = "https://taskflow-odcc.onrender.com/api/tasks";
+const AUTH_API = "https://taskflow-odcc.onrender.com/api/auth";
 const CATEGORIES = ["Work", "Study", "Personal", "Shopping", "Other"];
 
 const CATEGORY_ICONS = {
