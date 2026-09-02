@@ -1849,4 +1849,113 @@ button:disabled {
   .create-card {
     padding: 20px 15px;
   }
+}/* ================= ASSIGN TO FIX ================= */
+
+.create-form .form-field {
+  display: flex !important;
+  flex-direction: column !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+.create-form .form-field label {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+.create-form .form-field select {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  width: 100% !important;
+  min-height: 48px !important;
+}
+
+/* Make sure Assign To is visible */
+.create-form .form-field:nth-child(6) {
+  display: flex !important;
+}
+
+/* Edit modal Assign To */
+.edit-form select {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+/* ASSIGN TO FIELD - FINAL FIX */
+.create-form .assign-field {
+  display: flex !important;
+  flex-direction: column !important;
+  width: 100% !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  height: auto !important;
+  min-height: 80px !important;
+}
+
+.create-form .assign-field label {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+.create-form .assign-field select {
+  display: block !important;
+  width: 100% !important;
+  min-height: 48px !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}/* ================= ASSIGN TO FIX ================= */
+
+.create-form .assign-field {
+  display: flex !important;
+  flex-direction: column !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+
+.create-form .assign-field label {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  margin-bottom: 8px !important;
+}
+
+.create-form .assign-field select {
+  display: block !important;
+  width: 100% !important;
+  min-height: 48px !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  position: relative !important;
+  z-index: 10 !important;
+}
+
+.edit-assign-field {
+  display: flex !important;
+  flex-direction: column !important;
+  width: 100% !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+
+.edit-assign-field label {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+.edit-assign-field select {
+  display: block !important;
+  width: 100% !important;
+  min-height: 48px !important;
+  visibility: visible !important;
+  opacity: 1 !important;
 }

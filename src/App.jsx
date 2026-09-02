@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 
 const API = "https://taskflow-odcc.onrender.com/api/tasks";
 const AUTH_API = "https://taskflow-odcc.onrender.com/api/auth";
-const USERS_API = "https://taskflow-odcc.onrender.com/api/tasks/users/list";
+const USERS_API = "https://taskflow-odcc.onrender.com/api/users";
 
 const CATEGORIES = ["Work", "Study", "Personal", "Shopping", "Other"];
 
@@ -1488,14 +1488,14 @@ function App() {
               />
             </div>
 
-            <div className="form-field">
+            <div className="form-field assign-field">
               <label>
                 Assign To
               </label>
 
               <select
                 value={
-                  form.assignedTo
+                  form.assignedTo || ""
                 }
                 onChange={(e) =>
                   setForm({
@@ -2403,15 +2403,16 @@ function App() {
                 }
               />
 
-              <label>
-                Assign To
-              </label>
+              <div className="edit-assign-field">
+                <label>
+                  Assign To
+                </label>
 
-              <select
-                value={
-                  editingTask.assignedTo ||
-                  ""
-                }
+                <select
+                  value={
+                    editingTask.assignedTo ||
+                    ""
+                  }
                 onChange={(e) =>
                   setEditingTask({
                     ...editingTask,
@@ -2451,7 +2452,8 @@ function App() {
                       </option>
                     )
                   )}
-              </select>
+                </select>
+              </div>
 
               <label>
                 Status
