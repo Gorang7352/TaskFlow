@@ -1,34 +1,16 @@
-require("dotenv").config();
-
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const dns = require("dns");
+require("dotenv").config();
 
-const taskRoutes = require("./routes/taskRoutes");
 const User = require("./models/User");
-
-dns.setServers(["8.8.8.8", "1.1.1.1"]);
+const taskRoutes = require("./routes/taskRoutes");
 
 const app = express();
 
-const PORT = process.env.PORT || 5000;
-
-const JWT_SECRET =
-  process.env.JWT_SECRET || "taskflow_secret_key";
-
-const MONGO_URI = process.env.MONGO_URI;
-
-if (!MONGO_URI) {
-  console.error("ERROR: MONGO_URI not found in .env");
-  process.exit(1);
-}
-
-/* =========================
-   MIDDLEWARE
-========================= */
+/* ================= MIDDLEWARE ================= */
 
 app.use(
   cors({
@@ -39,26 +21,34 @@ app.use(
 
 app.use(express.json());
 
-/* =========================
-   JWT TOKEN
-========================= */
+/* ================= ENVIRONMENT ================= */
 
-function createToken(user) {
-  return jwt.sign(
-    {
-      userId: user._id,
-      email: user.email,
-    },
-    JWT_SECRET,
-    {
-      expiresIn: "7d",
-    }
-  );
+const MONGO_URI = process.env.MONGO_URI;
+const JWT_SECRET =
+  process.env.JWT_SECRET || "taskflow_secret_key";
+
+if (!MONGO_URI) {
+  console.error("MONGO_URI is missing in .env");
+  process.exit(1);
 }
 
-/* =========================
-   HOME / HEALTH CHECK
-========================= */
+/* ================= DATABASE ================= */
+
+console.log("Connecting to MongoDB...");
+
+mongoose
+  .connect(MONGO_URI)
+  .then(() => {
+    console.log("MongoDB Connected Successfully");
+  })
+  .catch((error) => {
+    console.error(
+      "MongoDB Connection Error:",
+      error.message
+    );
+  });
+
+/* ================= HEALTH CHECK ================= */
 
 app.get("/", (req, res) => {
   res.json({
@@ -67,63 +57,40 @@ app.get("/", (req, res) => {
   });
 });
 
-/* =========================
-   REGISTER
-========================= */
+/* ================= REGISTER ================= */
 
 app.post("/api/auth/register", async (req, res) => {
   try {
-    const {
-      name,
-      email,
-      password,
-    } = req.body;
+    const { name, email, password } = req.body;
 
-    if (
-      typeof name !== "string" ||
-      !name.trim()
-    ) {
+    if (!name || !email || !password) {
       return res.status(400).json({
-        message: "Name is required.",
+        success: false,
+        message:
+          "Name, email and password are required",
       });
     }
-
-    if (
-      typeof email !== "string" ||
-      !email.trim()
-    ) {
-      return res.status(400).json({
-        message: "Email is required.",
-      });
-    }
-
-    if (
-      typeof password !== "string" ||
-      !password
-    ) {
-      return res.status(400).json({
-        message: "Password is required.",
-      });
-    }
-
-    const cleanName = name.trim();
-    const cleanEmail = email.trim().toLowerCase();
 
     if (password.length < 6) {
       return res.status(400).json({
+        success: false,
         message:
-          "Password must be at least 6 characters.",
+          "Password must be at least 6 characters",
       });
     }
 
+    const normalizedEmail =
+      email.toLowerCase().trim();
+
     const existingUser = await User.findOne({
-      email: cleanEmail,
+      email: normalizedEmail,
     });
 
     if (existingUser) {
       return res.status(409).json({
+        success: false,
         message:
-          "Account already exists. Please login.",
+          "User already exists with this email",
       });
     }
 
@@ -133,77 +100,70 @@ app.post("/api/auth/register", async (req, res) => {
     );
 
     const user = await User.create({
-      name: cleanName,
-      email: cleanEmail,
+      name: name.trim(),
+      email: normalizedEmail,
       password: hashedPassword,
+      role: "user",
     });
 
-    const token = createToken(user);
-
-    console.log(
-      `New User Registered → ${user.name} | ${user.email}`
+    const token = jwt.sign(
+      {
+        id: user._id,
+        email: user.email,
+        role: user.role || "user",
+      },
+      JWT_SECRET,
+      {
+        expiresIn: "7d",
+      }
     );
 
     res.status(201).json({
-      message: "Registration successful.",
+      success: true,
+      message: "Registration successful",
       token,
       user: {
         id: user._id,
         name: user.name,
         email: user.email,
+        role: user.role || "user",
       },
     });
   } catch (error) {
-    console.error(
-      "REGISTER ERROR:",
-      error
-    );
+    console.error("Register Error:", error);
 
     res.status(500).json({
-      message: "Registration failed.",
+      success: false,
+      message: "Registration failed",
     });
   }
 });
 
-/* =========================
-   LOGIN
-========================= */
+/* ================= LOGIN ================= */
 
 app.post("/api/auth/login", async (req, res) => {
   try {
-    const {
-      email,
-      password,
-    } = req.body;
+    const { email, password } = req.body;
 
-    if (
-      typeof email !== "string" ||
-      !email.trim()
-    ) {
+    if (!email || !password) {
       return res.status(400).json({
-        message: "Email is required.",
+        success: false,
+        message:
+          "Email and password are required",
       });
     }
 
-    if (
-      typeof password !== "string" ||
-      !password
-    ) {
-      return res.status(400).json({
-        message: "Password is required.",
-      });
-    }
-
-    const cleanEmail = email.trim().toLowerCase();
+    const normalizedEmail =
+      email.toLowerCase().trim();
 
     const user = await User.findOne({
-      email: cleanEmail,
+      email: normalizedEmail,
     });
 
     if (!user) {
       return res.status(401).json({
-        message:
-          "Account not found. Please register first.",
+        success: false,
+        message: "Invalid email or password",
       });
     }
 
@@ -215,89 +175,210 @@ app.post("/api/auth/login", async (req, res) => {
 
     if (!passwordMatch) {
       return res.status(401).json({
-        message: "Incorrect password.",
+        success: false,
+        message: "Invalid email or password",
       });
     }
 
-    const token = createToken(user);
+    const userRole = user.role || "user";
 
-    console.log(
-      `User Login → ${user.name} | ${user.email}`
+    const token = jwt.sign(
+      {
+        id: user._id,
+        email: user.email,
+        role: userRole,
+      },
+      JWT_SECRET,
+      {
+        expiresIn: "7d",
+      }
     );
 
     res.json({
-      message: "Login successful.",
+      success: true,
+      message: "Login successful",
       token,
       user: {
         id: user._id,
         name: user.name,
         email: user.email,
+        role: userRole,
       },
     });
   } catch (error) {
-    console.error(
-      "LOGIN ERROR:",
-      error
-    );
+    console.error("Login Error:", error);
 
     res.status(500).json({
-      message: "Login failed.",
+      success: false,
+      message: "Login failed",
     });
   }
 });
 
-/* =========================
-   TASK ROUTES
-========================= */
+/* ================= AUTH MIDDLEWARE ================= */
 
-app.use(
-  "/api/tasks",
-  taskRoutes
-);
-
-/* =========================
-   SERVER START
-========================= */
-
-async function startServer() {
+const authMiddleware = async (
+  req,
+  res,
+  next
+) => {
   try {
-    console.log(
-      "Connecting to MongoDB..."
+    const authHeader =
+      req.headers.authorization;
+
+    if (
+      !authHeader ||
+      !authHeader.startsWith("Bearer ")
+    ) {
+      return res.status(401).json({
+        success: false,
+        message:
+          "Access denied. No token provided.",
+      });
+    }
+
+    const token =
+      authHeader.split(" ")[1];
+
+    const decoded = jwt.verify(
+      token,
+      JWT_SECRET
     );
 
-    await mongoose.connect(
-      MONGO_URI,
-      {
-        serverSelectionTimeoutMS: 15000,
-        connectTimeoutMS: 15000,
-      }
-    );
+    const user =
+      await User.findById(decoded.id).select(
+        "-password"
+      );
 
-    console.log(
-      "MongoDB Connected Successfully"
-    );
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "User not found",
+      });
+    }
 
-    app.listen(
-      PORT,
-      "0.0.0.0",
-      () => {
-        console.log(
-          `Server running on http://localhost:${PORT}`
-        );
+    req.user = user;
 
-        console.log(
-          `Mobile backend: http://192.168.71.42:${PORT}`
-        );
-      }
-    );
+    next();
   } catch (error) {
     console.error(
-      "MongoDB Connection Error:",
+      "Auth Error:",
       error.message
     );
 
-    process.exit(1);
+    return res.status(401).json({
+      success: false,
+      message:
+        "Invalid or expired token",
+    });
   }
-}
+};
 
-startServer();
+/* ================= CURRENT USER ================= */
+
+app.get(
+  "/api/auth/me",
+  authMiddleware,
+  async (req, res) => {
+    try {
+      res.json({
+        success: true,
+        user: {
+          id: req.user._id,
+          name: req.user.name,
+          email: req.user.email,
+          role: req.user.role || "user",
+        },
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message:
+          "Unable to fetch user",
+      });
+    }
+  }
+);
+
+/* ================================================= */
+/* TEMPORARY ADMIN SETUP                             */
+/* ================================================= */
+
+app.get(
+  "/api/setup-admin",
+  async (req, res) => {
+    try {
+      const adminEmail =
+        "kumargorang@gmail.com";
+
+      const user =
+        await User.findOneAndUpdate(
+          {
+            email: adminEmail,
+          },
+          {
+            $set: {
+              role: "admin",
+            },
+          },
+          {
+            new: true,
+          }
+        );
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Admin user not found",
+        });
+      }
+
+      res.json({
+        success: true,
+        message:
+          "Admin role assigned successfully",
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+        },
+      });
+    } catch (error) {
+      console.error(
+        "Admin Setup Error:",
+        error
+      );
+
+      res.status(500).json({
+        success: false,
+        message:
+          "Failed to assign admin role",
+      });
+    }
+  }
+);
+
+/* ================= TASK ROUTES ================= */
+
+app.use(
+  "/api/tasks",
+  authMiddleware,
+  taskRoutes
+);
+
+/* ================= SERVER ================= */
+
+const PORT =
+  process.env.PORT || 5000;
+
+app.listen(
+  PORT,
+  "0.0.0.0",
+  () => {
+    console.log(
+      `Server running on http://localhost:${PORT}`
+    );
+  }
+);
