@@ -10,45 +10,41 @@ const taskRoutes = require("./routes/taskRoutes");
 
 const app = express();
 
-/* ================= MIDDLEWARE ================= */
+const PORT = process.env.PORT || 5000;
+
+const JWT_SECRET =
+  process.env.JWT_SECRET || "taskflow_super_secret_key_2026";
+
+/* =========================
+   MIDDLEWARE
+========================= */
 
 app.use(
   cors({
-    origin: true,
-    credentials: true,
+    origin: "*",
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
 app.use(express.json());
 
-/* ================= ENVIRONMENT ================= */
-
-const MONGO_URI = process.env.MONGO_URI;
-const JWT_SECRET =
-  process.env.JWT_SECRET || "taskflow_secret_key";
-
-if (!MONGO_URI) {
-  console.error("MONGO_URI is missing in .env");
-  process.exit(1);
-}
-
-/* ================= DATABASE ================= */
-
-console.log("Connecting to MongoDB...");
+/* =========================
+   DATABASE
+========================= */
 
 mongoose
-  .connect(MONGO_URI)
+  .connect(process.env.MONGO_URI)
   .then(() => {
     console.log("MongoDB Connected Successfully");
   })
   .catch((error) => {
-    console.error(
-      "MongoDB Connection Error:",
-      error.message
-    );
+    console.error("MongoDB Connection Error:", error.message);
   });
 
-/* ================= HEALTH CHECK ================= */
+/* =========================
+   ROOT HEALTH CHECK
+========================= */
 
 app.get("/", (req, res) => {
   res.json({
@@ -57,7 +53,9 @@ app.get("/", (req, res) => {
   });
 });
 
-/* ================= REGISTER ================= */
+/* =========================
+   AUTH - REGISTER
+========================= */
 
 app.post("/api/auth/register", async (req, res) => {
   try {
@@ -66,38 +64,31 @@ app.post("/api/auth/register", async (req, res) => {
     if (!name || !email || !password) {
       return res.status(400).json({
         success: false,
-        message:
-          "Name, email and password are required",
+        message: "Name, email and password are required",
       });
     }
 
     if (password.length < 6) {
       return res.status(400).json({
         success: false,
-        message:
-          "Password must be at least 6 characters",
+        message: "Password must be at least 6 characters",
       });
     }
 
-    const normalizedEmail =
-      email.toLowerCase().trim();
+    const normalizedEmail = email.toLowerCase().trim();
 
     const existingUser = await User.findOne({
       email: normalizedEmail,
     });
 
     if (existingUser) {
-      return res.status(409).json({
+      return res.status(400).json({
         success: false,
-        message:
-          "User already exists with this email",
+        message: "User already exists",
       });
     }
 
-    const hashedPassword = await bcrypt.hash(
-      password,
-      10
-    );
+    const hashedPassword = await bcrypt.hash(password, 10);
 
     const user = await User.create({
       name: name.trim(),
@@ -110,7 +101,7 @@ app.post("/api/auth/register", async (req, res) => {
       {
         id: user._id,
         email: user.email,
-        role: user.role || "user",
+        role: user.role,
       },
       JWT_SECRET,
       {
@@ -126,7 +117,7 @@ app.post("/api/auth/register", async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role || "user",
+        role: user.role,
       },
     });
   } catch (error) {
@@ -139,7 +130,9 @@ app.post("/api/auth/register", async (req, res) => {
   }
 });
 
-/* ================= LOGIN ================= */
+/* =========================
+   AUTH - LOGIN
+========================= */
 
 app.post("/api/auth/login", async (req, res) => {
   try {
@@ -148,13 +141,11 @@ app.post("/api/auth/login", async (req, res) => {
     if (!email || !password) {
       return res.status(400).json({
         success: false,
-        message:
-          "Email and password are required",
+        message: "Email and password are required",
       });
     }
 
-    const normalizedEmail =
-      email.toLowerCase().trim();
+    const normalizedEmail = email.toLowerCase().trim();
 
     const user = await User.findOne({
       email: normalizedEmail,
@@ -167,11 +158,10 @@ app.post("/api/auth/login", async (req, res) => {
       });
     }
 
-    const passwordMatch =
-      await bcrypt.compare(
-        password,
-        user.password
-      );
+    const passwordMatch = await bcrypt.compare(
+      password,
+      user.password
+    );
 
     if (!passwordMatch) {
       return res.status(401).json({
@@ -180,13 +170,11 @@ app.post("/api/auth/login", async (req, res) => {
       });
     }
 
-    const userRole = user.role || "user";
-
     const token = jwt.sign(
       {
         id: user._id,
         email: user.email,
-        role: userRole,
+        role: user.role || "user",
       },
       JWT_SECRET,
       {
@@ -202,7 +190,7 @@ app.post("/api/auth/login", async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
-        role: userRole,
+        role: user.role || "user",
       },
     });
   } catch (error) {
@@ -215,40 +203,28 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
-/* ================= AUTH MIDDLEWARE ================= */
+/* =========================
+   AUTH MIDDLEWARE
+========================= */
 
-const authMiddleware = async (
-  req,
-  res,
-  next
-) => {
+const authMiddleware = async (req, res, next) => {
   try {
-    const authHeader =
-      req.headers.authorization;
+    const authHeader = req.headers.authorization;
 
-    if (
-      !authHeader ||
-      !authHeader.startsWith("Bearer ")
-    ) {
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({
         success: false,
-        message:
-          "Access denied. No token provided.",
+        message: "Access denied. No token provided.",
       });
     }
 
-    const token =
-      authHeader.split(" ")[1];
+    const token = authHeader.split(" ")[1];
 
-    const decoded = jwt.verify(
-      token,
-      JWT_SECRET
+    const decoded = jwt.verify(token, JWT_SECRET);
+
+    const user = await User.findById(decoded.id).select(
+      "-password"
     );
-
-    const user =
-      await User.findById(decoded.id).select(
-        "-password"
-      );
 
     if (!user) {
       return res.status(401).json({
@@ -261,106 +237,43 @@ const authMiddleware = async (
 
     next();
   } catch (error) {
-    console.error(
-      "Auth Error:",
-      error.message
-    );
+    console.error("Auth Error:", error.message);
 
     return res.status(401).json({
       success: false,
-      message:
-        "Invalid or expired token",
+      message: "Invalid or expired token",
     });
   }
 };
 
-/* ================= CURRENT USER ================= */
+/* =========================
+   CURRENT USER
+========================= */
 
-app.get(
-  "/api/auth/me",
-  authMiddleware,
-  async (req, res) => {
-    try {
-      res.json({
-        success: true,
-        user: {
-          id: req.user._id,
-          name: req.user.name,
-          email: req.user.email,
-          role: req.user.role || "user",
-        },
-      });
-    } catch (error) {
-      res.status(500).json({
-        success: false,
-        message:
-          "Unable to fetch user",
-      });
-    }
+app.get("/api/auth/me", authMiddleware, async (req, res) => {
+  try {
+    res.json({
+      success: true,
+      user: {
+        id: req.user._id,
+        name: req.user.name,
+        email: req.user.email,
+        role: req.user.role || "user",
+      },
+    });
+  } catch (error) {
+    console.error("Current User Error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to get current user",
+    });
   }
-);
+});
 
-/* ================================================= */
-/* TEMPORARY ADMIN SETUP                             */
-/* ================================================= */
-
-app.get(
-  "/api/setup-admin",
-  async (req, res) => {
-    try {
-      const adminEmail =
-        "kumargorang@gmail.com";
-
-      const user =
-        await User.findOneAndUpdate(
-          {
-            email: adminEmail,
-          },
-          {
-            $set: {
-              role: "admin",
-            },
-          },
-          {
-            new: true,
-          }
-        );
-
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          message:
-            "Admin user not found",
-        });
-      }
-
-      res.json({
-        success: true,
-        message:
-          "Admin role assigned successfully",
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-        },
-      });
-    } catch (error) {
-      console.error(
-        "Admin Setup Error:",
-        error
-      );
-
-      res.status(500).json({
-        success: false,
-        message:
-          "Failed to assign admin role",
-      });
-    }
-  }
-);
-
-/* ================= TASK ROUTES ================= */
+/* =========================
+   TASK ROUTES
+========================= */
 
 app.use(
   "/api/tasks",
@@ -368,17 +281,34 @@ app.use(
   taskRoutes
 );
 
-/* ================= SERVER ================= */
+/* =========================
+   404 HANDLER
+========================= */
 
-const PORT =
-  process.env.PORT || 5000;
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: "Route not found",
+  });
+});
 
-app.listen(
-  PORT,
-  "0.0.0.0",
-  () => {
-    console.log(
-      `Server running on http://localhost:${PORT}`
-    );
-  }
-);
+/* =========================
+   ERROR HANDLER
+========================= */
+
+app.use((error, req, res, next) => {
+  console.error("Server Error:", error);
+
+  res.status(500).json({
+    success: false,
+    message: "Internal server error",
+  });
+});
+
+/* =========================
+   START SERVER
+========================= */
+
+app.listen(PORT, () => {
+  console.log(`TaskFlow API running on port ${PORT}`);
+});
