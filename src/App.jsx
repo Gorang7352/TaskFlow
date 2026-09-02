@@ -1,7 +1,10 @@
 import "./App.css";
 import { useEffect, useMemo, useState } from "react";
+
 const API = "https://taskflow-odcc.onrender.com/api/tasks";
 const AUTH_API = "https://taskflow-odcc.onrender.com/api/auth";
+const USERS_API = "https://taskflow-odcc.onrender.com/api/tasks/users/list";
+
 const CATEGORIES = ["Work", "Study", "Personal", "Shopping", "Other"];
 
 const CATEGORY_ICONS = {
@@ -13,8 +16,6 @@ const CATEGORY_ICONS = {
 };
 
 function App() {
-  /* ================= AUTH ================= */
-
   const [token, setToken] = useState(
     localStorage.getItem("taskflowToken") || ""
   );
@@ -28,7 +29,6 @@ function App() {
   });
 
   const [authMode, setAuthMode] = useState("login");
-  const [showAuth, setShowAuth] = useState(!token);
 
   const [authForm, setAuthForm] = useState({
     name: "",
@@ -37,10 +37,8 @@ function App() {
   });
 
   const [authLoading, setAuthLoading] = useState(false);
-
-  /* ================= TASK STATE ================= */
-
   const [tasks, setTasks] = useState([]);
+  const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const [form, setForm] = useState({
@@ -49,6 +47,7 @@ function App() {
     category: "Personal",
     priority: "Medium",
     dueDate: "",
+    assignedTo: "",
   });
 
   const [search, setSearch] = useState("");
@@ -59,11 +58,10 @@ function App() {
 
   const [editingTask, setEditingTask] = useState(null);
   const [deleteTaskInfo, setDeleteTaskInfo] = useState(null);
+  const [viewingTask, setViewingTask] = useState(null);
 
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState("success");
-
-  /* ================= TOAST ================= */
 
   const showMessage = (text, type = "success") => {
     setMessage(text);
@@ -74,7 +72,12 @@ function App() {
     }, 3000);
   };
 
-  /* ================= API HELPER ================= */
+  const scrollToSection = (id) => {
+    document.getElementById(id)?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  };
 
   const request = async (url, options = {}) => {
     const response = await fetch(url, {
@@ -111,7 +114,7 @@ function App() {
       return;
     }
 
-    if (authMode === "register" && !authForm.name) {
+    if (authMode === "register" && !authForm.name.trim()) {
       showMessage("Please enter your name.", "error");
       return;
     }
@@ -157,7 +160,6 @@ function App() {
 
       setToken(newToken);
       setUser(newUser);
-      setShowAuth(false);
 
       setAuthForm({
         name: "",
@@ -168,8 +170,7 @@ function App() {
       showMessage(
         authMode === "login"
           ? "Welcome back! Login successful."
-          : "Account created successfully!",
-        "success"
+          : "Account created successfully!"
       );
     } catch (error) {
       showMessage(error.message, "error");
@@ -185,7 +186,7 @@ function App() {
     setToken("");
     setUser(null);
     setTasks([]);
-    setShowAuth(true);
+    setUsers([]);
 
     showMessage("You have been logged out.");
   };
@@ -214,13 +215,60 @@ function App() {
     }
   };
 
+  /* ================= FETCH USERS ================= */
+
+  const fetchUsers = async () => {
+    if (!token) return;
+
+    try {
+      const data = await request(USERS_API);
+
+      const receivedUsers = Array.isArray(data)
+        ? data
+        : Array.isArray(data.users)
+        ? data.users
+        : [];
+
+      setUsers(receivedUsers);
+    } catch (error) {
+      showMessage(error.message, "error");
+    }
+  };
+
   useEffect(() => {
     if (token) {
       fetchTasks();
+      fetchUsers();
     }
   }, [token]);
 
-  /* ================= CREATE TASK ================= */
+  /* ================= USER NAME ================= */
+
+  const getUserName = (person) => {
+    if (!person) return "Unknown User";
+
+    return (
+      person.name ||
+      person.fullName ||
+      person.username ||
+      person.email ||
+      "Unknown User"
+    );
+  };
+
+  const getAssignedUser = (task) => {
+    if (!task?.assignedTo) return null;
+
+    if (typeof task.assignedTo === "object") {
+      return task.assignedTo;
+    }
+
+    return users.find(
+      (person) => person._id === task.assignedTo
+    );
+  };
+
+  /* ================= CREATE ================= */
 
   const handleCreateTask = async (e) => {
     e.preventDefault();
@@ -240,6 +288,7 @@ function App() {
           priority: form.priority,
           dueDate: form.dueDate || null,
           completed: false,
+          assignedTo: form.assignedTo || null,
         }),
       });
 
@@ -253,23 +302,40 @@ function App() {
         category: "Personal",
         priority: "Medium",
         dueDate: "",
+        assignedTo: "",
       });
 
-      showMessage("Task added successfully!");
+      showMessage(
+        form.assignedTo
+          ? "Task created and assigned successfully!"
+          : "Task added successfully!"
+      );
+
+      setTimeout(() => {
+        scrollToSection("tasks-section");
+      }, 300);
     } catch (error) {
       showMessage(error.message, "error");
     }
   };
 
-  /* ================= COMPLETE TASK ================= */
+  /* ================= COMPLETE ================= */
 
   const toggleComplete = async (task) => {
     try {
       const data = await request(`${API}/${task._id}`, {
         method: "PUT",
         body: JSON.stringify({
-          ...task,
+          title: task.title,
+          description: task.description || "",
+          category: task.category || "Other",
+          priority: task.priority || "Medium",
+          dueDate: task.dueDate || null,
           completed: !task.completed,
+          assignedTo:
+            typeof task.assignedTo === "object"
+              ? task.assignedTo?._id || null
+              : task.assignedTo || null,
         }),
       });
 
@@ -301,6 +367,10 @@ function App() {
       dueDate: task.dueDate
         ? String(task.dueDate).slice(0, 10)
         : "",
+      assignedTo:
+        typeof task.assignedTo === "object"
+          ? task.assignedTo?._id || ""
+          : task.assignedTo || "",
     });
   };
 
@@ -322,6 +392,7 @@ function App() {
           priority: editingTask.priority || "Medium",
           dueDate: editingTask.dueDate || null,
           completed: !!editingTask.completed,
+          assignedTo: editingTask.assignedTo || null,
         }),
       });
 
@@ -329,9 +400,7 @@ function App() {
 
       setTasks((prev) =>
         prev.map((item) =>
-          item._id === editingTask._id
-            ? updatedTask
-            : item
+          item._id === editingTask._id ? updatedTask : item
         )
       );
 
@@ -362,9 +431,7 @@ function App() {
       });
 
       setTasks((prev) =>
-        prev.filter(
-          (item) => item._id !== deleteTaskInfo._id
-        )
+        prev.filter((item) => item._id !== deleteTaskInfo._id)
       );
 
       setDeleteTaskInfo(null);
@@ -375,7 +442,7 @@ function App() {
     }
   };
 
-  /* ================= DATE HELPERS ================= */
+  /* ================= DATE ================= */
 
   const formatDate = (date) => {
     if (!date) return "No due date";
@@ -418,7 +485,7 @@ function App() {
     );
   };
 
-  /* ================= FILTER + SORT ================= */
+  /* ================= FILTER ================= */
 
   const filteredTasks = useMemo(() => {
     let result = [...tasks];
@@ -429,7 +496,9 @@ function App() {
       result = result.filter((task) =>
         `${task.title || ""} ${
           task.description || ""
-        } ${task.category || ""}`
+        } ${task.category || ""} ${
+          getUserName(getAssignedUser(task)) || ""
+        }`
           .toLowerCase()
           .includes(q)
       );
@@ -450,15 +519,21 @@ function App() {
     }
 
     if (statusFilter === "Pending") {
-      result = result.filter((task) => !task.completed);
+      result = result.filter(
+        (task) => !task.completed
+      );
     }
 
     if (statusFilter === "Completed") {
-      result = result.filter((task) => task.completed);
+      result = result.filter(
+        (task) => task.completed
+      );
     }
 
     if (statusFilter === "Overdue") {
-      result = result.filter((task) => isOverdue(task));
+      result = result.filter(
+        (task) => isOverdue(task)
+      );
     }
 
     const priorityValue = {
@@ -509,6 +584,7 @@ function App() {
     return result;
   }, [
     tasks,
+    users,
     search,
     categoryFilter,
     priorityFilter,
@@ -555,7 +631,52 @@ function App() {
     {}
   );
 
-  /* ================= DISPLAY NAME ================= */
+  const priorityStats = {
+    High: tasks.filter(
+      (task) =>
+        (task.priority || "Medium") === "High"
+    ).length,
+
+    Medium: tasks.filter(
+      (task) =>
+        (task.priority || "Medium") === "Medium"
+    ).length,
+
+    Low: tasks.filter(
+      (task) =>
+        (task.priority || "Medium") === "Low"
+    ).length,
+  };
+
+  const pendingByPriority = {
+    High: tasks.filter(
+      (task) =>
+        !task.completed &&
+        (task.priority || "Medium") === "High"
+    ).length,
+
+    Medium: tasks.filter(
+      (task) =>
+        !task.completed &&
+        (task.priority || "Medium") === "Medium"
+    ).length,
+
+    Low: tasks.filter(
+      (task) =>
+        !task.completed &&
+        (task.priority || "Medium") === "Low"
+    ).length,
+  };
+
+  const maxCategoryCount = Math.max(
+    ...Object.values(categoryStats),
+    1
+  );
+
+  const maxPriorityCount = Math.max(
+    ...Object.values(priorityStats),
+    1
+  );
 
   const displayName =
     user?.name ||
@@ -565,7 +686,9 @@ function App() {
       ? user.email
           .split("@")[0]
           .replace(/[._-]/g, " ")
-          .replace(/\b\w/g, (char) => char.toUpperCase())
+          .replace(/\b\w/g, (char) =>
+            char.toUpperCase()
+          )
       : "User");
 
   /* ================= AUTH SCREEN ================= */
@@ -689,14 +812,38 @@ function App() {
 
   return (
     <div className="app-shell">
-      {/* ================= HEADER ================= */}
-
       <header className="top-header">
         <div className="header-inner">
           <div className="brand">
             <div className="brand-mark">✓</div>
             <span>TaskFlow</span>
           </div>
+
+          <nav className="top-navigation">
+            <button
+              onClick={() =>
+                scrollToSection("dashboard-section")
+              }
+            >
+              Dashboard
+            </button>
+
+            <button
+              onClick={() =>
+                scrollToSection("analytics-section")
+              }
+            >
+              Analytics
+            </button>
+
+            <button
+              onClick={() =>
+                scrollToSection("tasks-section")
+              }
+            >
+              My Tasks
+            </button>
+          </nav>
 
           <div className="header-right">
             <div className="welcome-user">
@@ -717,12 +864,13 @@ function App() {
         </div>
       </header>
 
-      {/* ================= MAIN ================= */}
-
       <main className="main-content">
-        {/* HERO */}
+        {/* ================= DASHBOARD ================= */}
 
-        <section className="welcome-section">
+        <section
+          className="welcome-section"
+          id="dashboard-section"
+        >
           <div>
             <span className="welcome-label">
               YOUR PERSONAL WORKSPACE
@@ -740,11 +888,130 @@ function App() {
           </div>
         </section>
 
+        {/* ================= QUICK ACTIONS ================= */}
+
+        <section className="quick-actions-section">
+          <div className="quick-actions-header">
+            <div>
+              <span className="section-kicker">
+                QUICK ACTIONS
+              </span>
+
+              <h2>
+                What would you like to do?
+              </h2>
+
+              <p>
+                Jump directly to the most important
+                parts of your workspace.
+              </p>
+            </div>
+          </div>
+
+          <div className="quick-actions-grid">
+            <button
+              className="quick-action-card primary-action"
+              onClick={() =>
+                scrollToSection(
+                  "create-task-section"
+                )
+              }
+            >
+              <div className="quick-action-icon">
+                ＋
+              </div>
+
+              <div>
+                <strong>
+                  Create New Task
+                </strong>
+                <span>
+                  Add a new task to your workspace
+                </span>
+              </div>
+
+              <b>→</b>
+            </button>
+
+            <button
+              className="quick-action-card"
+              onClick={() =>
+                scrollToSection(
+                  "analytics-section"
+                )
+              }
+            >
+              <div className="quick-action-icon">
+                📊
+              </div>
+
+              <div>
+                <strong>
+                  View Analytics
+                </strong>
+                <span>
+                  Check your productivity insights
+                </span>
+              </div>
+
+              <b>→</b>
+            </button>
+
+            <button
+              className="quick-action-card"
+              onClick={() =>
+                scrollToSection("tasks-section")
+              }
+            >
+              <div className="quick-action-icon">
+                📋
+              </div>
+
+              <div>
+                <strong>
+                  Manage Tasks
+                </strong>
+                <span>
+                  Search, edit and organize tasks
+                </span>
+              </div>
+
+              <b>→</b>
+            </button>
+
+            <button
+              className="quick-action-card"
+              onClick={fetchTasks}
+              disabled={loading}
+            >
+              <div className="quick-action-icon">
+                ↻
+              </div>
+
+              <div>
+                <strong>
+                  {loading
+                    ? "Refreshing..."
+                    : "Refresh Tasks"}
+                </strong>
+
+                <span>
+                  Load your latest task data
+                </span>
+              </div>
+
+              <b>→</b>
+            </button>
+          </div>
+        </section>
+
         {/* ================= STATS ================= */}
 
         <section className="stats-grid">
           <div className="stat-card">
-            <div className="stat-icon blue">📅</div>
+            <div className="stat-icon blue">
+              📅
+            </div>
 
             <div className="stat-content">
               <span>Today's Tasks</span>
@@ -754,32 +1021,46 @@ function App() {
           </div>
 
           <div className="stat-card">
-            <div className="stat-icon red">⚠️</div>
+            <div className="stat-icon red">
+              ⚠️
+            </div>
 
             <div className="stat-content">
               <span>Overdue</span>
               <strong>{overdueTasks}</strong>
-              <small>Unfinished past deadlines</small>
+              <small>
+                Unfinished past deadlines
+              </small>
             </div>
           </div>
 
           <div className="stat-card">
-            <div className="stat-icon orange">🔥</div>
+            <div className="stat-icon orange">
+              🔥
+            </div>
 
             <div className="stat-content">
               <span>High Priority</span>
-              <strong>{highPriorityTasks}</strong>
-              <small>Important tasks</small>
+              <strong>
+                {highPriorityTasks}
+              </strong>
+              <small>
+                Important tasks
+              </small>
             </div>
           </div>
 
           <div className="stat-card">
-            <div className="stat-icon green">✓</div>
+            <div className="stat-icon green">
+              ✓
+            </div>
 
             <div className="stat-content">
               <span>Completion Rate</span>
               <strong>{progress}%</strong>
-              <small>Overall productivity</small>
+              <small>
+                Overall productivity
+              </small>
             </div>
           </div>
         </section>
@@ -821,7 +1102,9 @@ function App() {
           </div>
 
           <div className="progress-footer">
-            <span>{progress}% complete</span>
+            <span>
+              {progress}% complete
+            </span>
 
             <span>
               {pendingTasks} pending
@@ -829,18 +1112,250 @@ function App() {
           </div>
         </section>
 
-        {/* ================= CREATE TASK ================= */}
+        {/* ================= ANALYTICS ================= */}
 
-        <section className="create-card">
+        <section
+          className="analytics-section"
+          id="analytics-section"
+        >
+          <div className="section-title-row">
+            <div>
+              <div className="section-kicker">
+                INSIGHTS
+              </div>
+
+              <h2>Task Analytics</h2>
+
+              <p>
+                Understand your workload and task
+                distribution at a glance.
+              </p>
+            </div>
+          </div>
+
+          <div className="analytics-grid">
+            <div className="analytics-card">
+              <div className="analytics-card-header">
+                <div>
+                  <span className="analytics-label">
+                    CATEGORY DISTRIBUTION
+                  </span>
+
+                  <h3>
+                    Tasks by Category
+                  </h3>
+                </div>
+
+                <span className="analytics-total">
+                  {tasks.length}
+                </span>
+              </div>
+
+              <div className="analytics-bars">
+                {CATEGORIES.map((category) => {
+                  const count =
+                    categoryStats[category] || 0;
+
+                  const percentage =
+                    tasks.length === 0
+                      ? 0
+                      : Math.round(
+                          (count /
+                            tasks.length) *
+                            100
+                        );
+
+                  return (
+                    <div
+                      className="analytics-bar-row"
+                      key={category}
+                    >
+                      <div className="analytics-bar-info">
+                        <span>
+                          {
+                            CATEGORY_ICONS[
+                              category
+                            ]
+                          }{" "}
+                          {category}
+                        </span>
+
+                        <strong>
+                          {count}{" "}
+                          <small>
+                            ({percentage}%)
+                          </small>
+                        </strong>
+                      </div>
+
+                      <div className="analytics-track">
+                        <div
+                          className="analytics-fill"
+                          style={{
+                            width: `${
+                              (count /
+                                maxCategoryCount) *
+                              100
+                            }%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="analytics-card">
+              <div className="analytics-card-header">
+                <div>
+                  <span className="analytics-label">
+                    PRIORITY BREAKDOWN
+                  </span>
+
+                  <h3>
+                    Tasks by Priority
+                  </h3>
+                </div>
+
+                <span className="analytics-total">
+                  {tasks.length}
+                </span>
+              </div>
+
+              <div className="priority-analytics">
+                {[
+                  "High",
+                  "Medium",
+                  "Low",
+                ].map((priority) => {
+                  const count =
+                    priorityStats[
+                      priority
+                    ];
+
+                  const pending =
+                    pendingByPriority[
+                      priority
+                    ];
+
+                  const percentage =
+                    tasks.length === 0
+                      ? 0
+                      : Math.round(
+                          (count /
+                            tasks.length) *
+                            100
+                        );
+
+                  return (
+                    <div
+                      className="priority-analytics-row"
+                      key={priority}
+                    >
+                      <div
+                        className={`priority-dot ${priority.toLowerCase()}`}
+                      />
+
+                      <div className="priority-main">
+                        <div>
+                          <strong>
+                            {priority}
+                          </strong>
+
+                          <span>
+                            {pending} pending
+                          </span>
+                        </div>
+
+                        <div className="priority-count">
+                          {count}
+                        </div>
+                      </div>
+
+                      <div className="priority-mini-track">
+                        <div
+                          className={`priority-mini-fill ${priority.toLowerCase()}`}
+                          style={{
+                            width: `${
+                              (count /
+                                maxPriorityCount) *
+                              100
+                            }%`,
+                          }}
+                        />
+                      </div>
+
+                      <small>
+                        {percentage}%
+                      </small>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div className="analytics-summary">
+            <div>
+              <span>
+                📊 Total Tasks
+              </span>
+
+              <strong>{tasks.length}</strong>
+            </div>
+
+            <div>
+              <span>
+                ✅ Completed
+              </span>
+
+              <strong>
+                {completedTasks}
+              </strong>
+            </div>
+
+            <div>
+              <span>
+                ⏳ Pending
+              </span>
+
+              <strong>
+                {pendingTasks}
+              </strong>
+            </div>
+
+            <div>
+              <span>
+                ⚠️ Overdue
+              </span>
+
+              <strong>
+                {overdueTasks}
+              </strong>
+            </div>
+          </div>
+        </section>
+
+        {/* ================= CREATE ================= */}
+
+        <section
+          className="create-card"
+          id="create-task-section"
+        >
           <div className="section-heading">
-            <div className="heading-icon">✨</div>
+            <div className="heading-icon">
+              ✨
+            </div>
 
             <div>
               <div className="section-kicker">
                 GET THINGS DONE
               </div>
 
-              <h2>Create New Task</h2>
+              <h2>
+                Create New Task
+              </h2>
 
               <p>
                 Add something to your task list
@@ -850,10 +1365,14 @@ function App() {
 
           <form
             className="create-form"
-            onSubmit={handleCreateTask}
+            onSubmit={
+              handleCreateTask
+            }
           >
             <div className="form-field full">
-              <label>Task Title</label>
+              <label>
+                Task Title
+              </label>
 
               <input
                 type="text"
@@ -869,78 +1388,155 @@ function App() {
             </div>
 
             <div className="form-field full">
-              <label>Description</label>
+              <label>
+                Description
+              </label>
 
               <textarea
                 placeholder="Add task details..."
-                value={form.description}
+                value={
+                  form.description
+                }
                 onChange={(e) =>
                   setForm({
                     ...form,
-                    description: e.target.value,
+                    description:
+                      e.target.value,
                   })
                 }
               />
             </div>
 
             <div className="form-field">
-              <label>Category</label>
+              <label>
+                Category
+              </label>
 
               <select
-                value={form.category}
+                value={
+                  form.category
+                }
                 onChange={(e) =>
                   setForm({
                     ...form,
-                    category: e.target.value,
+                    category:
+                      e.target.value,
                   })
                 }
               >
-                {CATEGORIES.map((item) => (
-                  <option
-                    key={item}
-                    value={item}
-                  >
-                    {item}
-                  </option>
-                ))}
+                {CATEGORIES.map(
+                  (item) => (
+                    <option
+                      key={item}
+                      value={item}
+                    >
+                      {item}
+                    </option>
+                  )
+                )}
               </select>
             </div>
 
             <div className="form-field">
-              <label>Priority</label>
+              <label>
+                Priority
+              </label>
 
               <select
-                value={form.priority}
+                value={
+                  form.priority
+                }
                 onChange={(e) =>
                   setForm({
                     ...form,
-                    priority: e.target.value,
+                    priority:
+                      e.target.value,
                   })
                 }
               >
-                <option value="High">High</option>
+                <option value="High">
+                  High
+                </option>
 
                 <option value="Medium">
                   Medium
                 </option>
 
-                <option value="Low">Low</option>
+                <option value="Low">
+                  Low
+                </option>
               </select>
             </div>
 
             <div className="form-field">
-              <label>Due Date</label>
+              <label>
+                Due Date
+              </label>
 
               <input
                 type="date"
-                value={form.dueDate}
+                value={
+                  form.dueDate
+                }
                 onChange={(e) =>
                   setForm({
                     ...form,
-                    dueDate: e.target.value,
+                    dueDate:
+                      e.target.value,
                   })
                 }
               />
+            </div>
+
+            <div className="form-field">
+              <label>
+                Assign To
+              </label>
+
+              <select
+                value={
+                  form.assignedTo
+                }
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    assignedTo:
+                      e.target.value,
+                  })
+                }
+              >
+                <option value="">
+                  No Assignee
+                </option>
+
+                {users
+                  .filter(
+                    (person) =>
+                      person._id !==
+                      user?.id
+                  )
+                  .map(
+                    (person) => (
+                      <option
+                        key={
+                          person._id
+                        }
+                        value={
+                          person._id
+                        }
+                      >
+                        {getUserName(
+                          person
+                        )}{" "}
+                        (
+                        {
+                          person.email
+                        }
+                        )
+                      </option>
+                    )
+                  )}
+              </select>
             </div>
 
             <div className="form-field button-field">
@@ -957,7 +1553,7 @@ function App() {
           </form>
         </section>
 
-        {/* ================= CATEGORY OVERVIEW ================= */}
+        {/* ================= CATEGORY ================= */}
 
         <section className="category-section">
           <div className="section-title-row">
@@ -966,7 +1562,9 @@ function App() {
                 ORGANIZE
               </div>
 
-              <h2>Category Overview</h2>
+              <h2>
+                Category Overview
+              </h2>
 
               <p>
                 Tasks grouped by category
@@ -975,47 +1573,67 @@ function App() {
           </div>
 
           <div className="category-grid">
-            {CATEGORIES.map((category) => (
-              <div
-                className="category-stat-card"
-                key={category}
-              >
-                <div className="category-icon">
-                  {CATEGORY_ICONS[category]}
+            {CATEGORIES.map(
+              (category) => (
+                <div
+                  className="category-stat-card"
+                  key={category}
+                >
+                  <div className="category-icon">
+                    {
+                      CATEGORY_ICONS[
+                        category
+                      ]
+                    }
+                  </div>
+
+                  <div className="category-info">
+                    <span>
+                      {category}
+                    </span>
+
+                    <strong>
+                      {
+                        categoryStats[
+                          category
+                        ]
+                      }
+                    </strong>
+
+                    <small>
+                      {categoryStats[
+                        category
+                      ] === 1
+                        ? "task"
+                        : "tasks"}
+                    </small>
+                  </div>
                 </div>
-
-                <div className="category-info">
-                  <span>{category}</span>
-
-                  <strong>
-                    {categoryStats[category] || 0}
-                  </strong>
-
-                  <small>
-                    {categoryStats[category] === 1
-                      ? "task"
-                      : "tasks"}
-                  </small>
-                </div>
-              </div>
-            ))}
+              )
+            )}
           </div>
         </section>
 
         {/* ================= TASK MANAGER ================= */}
 
-        <section className="task-manager-card">
+        <section
+          className="task-manager-card"
+          id="tasks-section"
+        >
           <div className="manager-header">
             <div>
               <div className="section-kicker">
                 YOUR WORKSPACE
               </div>
 
-              <h2>Your Tasks</h2>
+              <h2>
+                Your Tasks
+              </h2>
 
               <p>
                 {filteredTasks.length}{" "}
-                {filteredTasks.length === 1
+                {filteredTasks.length ===
+                1
                   ? "task"
                   : "tasks"}{" "}
                 shown
@@ -1031,8 +1649,6 @@ function App() {
             </button>
           </div>
 
-          {/* CONTROLS */}
-
           <div className="task-controls">
             <div className="search-box">
               <span>🔍</span>
@@ -1042,54 +1658,74 @@ function App() {
                 placeholder="Search tasks..."
                 value={search}
                 onChange={(e) =>
-                  setSearch(e.target.value)
+                  setSearch(
+                    e.target.value
+                  )
                 }
               />
             </div>
 
             <select
-              value={categoryFilter}
+              value={
+                categoryFilter
+              }
               onChange={(e) =>
-                setCategoryFilter(e.target.value)
+                setCategoryFilter(
+                  e.target.value
+                )
               }
             >
               <option value="All">
                 All Categories
               </option>
 
-              {CATEGORIES.map((item) => (
-                <option
-                  key={item}
-                  value={item}
-                >
-                  {item}
-                </option>
-              ))}
+              {CATEGORIES.map(
+                (item) => (
+                  <option
+                    key={item}
+                    value={item}
+                  >
+                    {item}
+                  </option>
+                )
+              )}
             </select>
 
             <select
-              value={priorityFilter}
+              value={
+                priorityFilter
+              }
               onChange={(e) =>
-                setPriorityFilter(e.target.value)
+                setPriorityFilter(
+                  e.target.value
+                )
               }
             >
               <option value="All">
                 All Priorities
               </option>
 
-              <option value="High">High</option>
+              <option value="High">
+                High
+              </option>
 
               <option value="Medium">
                 Medium
               </option>
 
-              <option value="Low">Low</option>
+              <option value="Low">
+                Low
+              </option>
             </select>
 
             <select
-              value={statusFilter}
+              value={
+                statusFilter
+              }
               onChange={(e) =>
-                setStatusFilter(e.target.value)
+                setStatusFilter(
+                  e.target.value
+                )
               }
             >
               <option value="All">
@@ -1112,7 +1748,9 @@ function App() {
             <select
               value={sortBy}
               onChange={(e) =>
-                setSortBy(e.target.value)
+                setSortBy(
+                  e.target.value
+                )
               }
             >
               <option value="Newest">
@@ -1137,138 +1775,184 @@ function App() {
             </select>
           </div>
 
-          {/* TASK LIST */}
-
           <div className="task-list">
             {loading ? (
               <div className="empty-state">
                 <div className="loading-spinner" />
 
-                <h3>Loading tasks...</h3>
+                <h3>
+                  Loading tasks...
+                </h3>
 
                 <p>
-                  Please wait while your tasks
-                  are loading.
+                  Please wait while
+                  your tasks are
+                  loading.
                 </p>
               </div>
-            ) : filteredTasks.length === 0 ? (
+            ) : filteredTasks.length ===
+              0 ? (
               <div className="empty-state">
                 <div className="empty-icon">
                   📝
                 </div>
 
-                <h3>No tasks found</h3>
+                <h3>
+                  No tasks found
+                </h3>
 
                 <p>
-                  Create a task or change your
-                  filters.
+                  Create a task or
+                  change your filters.
                 </p>
               </div>
             ) : (
-              filteredTasks.map((task) => (
-                <div
-                  className={`task-item ${
-                    task.completed
-                      ? "completed-task"
-                      : ""
-                  }`}
-                  key={task._id}
-                >
-                  <div className="task-main">
-                    <button
-                      className={`complete-btn ${
+              filteredTasks.map(
+                (task) => {
+                  const assignedUser =
+                    getAssignedUser(
+                      task
+                    );
+
+                  return (
+                    <div
+                      className={`task-item ${
                         task.completed
-                          ? "completed"
+                          ? "completed-task"
                           : ""
                       }`}
-                      onClick={() =>
-                        toggleComplete(task)
-                      }
-                      title={
-                        task.completed
-                          ? "Mark as pending"
-                          : "Mark as complete"
-                      }
+                      key={task._id}
                     >
-                      {task.completed ? "✓" : ""}
-                    </button>
-
-                    <div className="task-content">
-                      <div className="task-title-row">
-                        <h3>{task.title}</h3>
-
-                        <span
-                          className={`priority-badge ${String(
-                            task.priority ||
-                              "Medium"
-                          ).toLowerCase()}`}
+                      <div className="task-main">
+                        <button
+                          className={`complete-btn ${
+                            task.completed
+                              ? "completed"
+                              : ""
+                          }`}
+                          onClick={() =>
+                            toggleComplete(
+                              task
+                            )
+                          }
                         >
-                          {task.priority ||
-                            "Medium"}
-                        </span>
+                          {task.completed
+                            ? "✓"
+                            : ""}
+                        </button>
+
+                        <div className="task-content">
+                          <div className="task-title-row">
+                            <h3>
+                              {
+                                task.title
+                              }
+                            </h3>
+
+                            <span
+                              className={`priority-badge ${String(
+                                task.priority ||
+                                  "Medium"
+                              ).toLowerCase()}`}
+                            >
+                              {
+                                task.priority ||
+                                  "Medium"
+                              }
+                            </span>
+                          </div>
+
+                          {task.description && (
+                            <p className="task-description">
+                              {
+                                task.description
+                              }
+                            </p>
+                          )}
+
+                          <div className="task-meta">
+                            <span className="category-badge">
+                              {
+                                CATEGORY_ICONS[
+                                  task.category ||
+                                    "Other"
+                                ]
+                              }{" "}
+                              {
+                                task.category ||
+                                  "Other"
+                              }
+                            </span>
+
+                            <span className="date-meta">
+                              📅{" "}
+                              {formatDate(
+                                task.dueDate
+                              )}
+                            </span>
+
+                            {assignedUser && (
+                              <span className="assigned-badge">
+                                👤{" "}
+                                {getUserName(
+                                  assignedUser
+                                )}
+                              </span>
+                            )}
+
+                            {isOverdue(
+                              task
+                            ) && (
+                              <span className="overdue-label">
+                                Overdue
+                              </span>
+                            )}
+
+                            {task.completed && (
+                              <span className="completed-label">
+                                ✓ Completed
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </div>
 
-                      {task.description && (
-                        <p className="task-description">
-                          {task.description}
-                        </p>
-                      )}
+                      <div className="task-actions">
+                        <button
+                          className="view-btn"
+                          onClick={() =>
+                            setViewingTask(
+                              task
+                            )
+                          }
+                        >
+                          View
+                        </button>
 
-                      <div className="task-meta">
-                        <span className="category-badge">
-                          {
-                            CATEGORY_ICONS[
-                              task.category ||
-                                "Other"
-                            ]
-                          }{" "}
-                          {task.category ||
-                            "Other"}
-                        </span>
+                        <button
+                          className="edit-btn"
+                          onClick={() =>
+                            openEdit(task)
+                          }
+                        >
+                          Edit
+                        </button>
 
-                        <span className="date-meta">
-                          📅{" "}
-                          {formatDate(
-                            task.dueDate
-                          )}
-                        </span>
-
-                        {isOverdue(task) && (
-                          <span className="overdue-label">
-                            Overdue
-                          </span>
-                        )}
-
-                        {task.completed && (
-                          <span className="completed-label">
-                            ✓ Completed
-                          </span>
-                        )}
+                        <button
+                          className="delete-btn"
+                          onClick={() =>
+                            askDeleteTask(
+                              task
+                            )
+                          }
+                        >
+                          Delete
+                        </button>
                       </div>
                     </div>
-                  </div>
-
-                  <div className="task-actions">
-                    <button
-                      className="edit-btn"
-                      onClick={() =>
-                        openEdit(task)
-                      }
-                    >
-                      Edit
-                    </button>
-
-                    <button
-                      className="delete-btn"
-                      onClick={() =>
-                        askDeleteTask(task)
-                      }
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              ))
+                  );
+                }
+              )
             )}
           </div>
         </section>
@@ -1280,41 +1964,66 @@ function App() {
         <div className="footer-inner">
           <div className="footer-brand">
             <div className="footer-logo-row">
-              <div className="footer-mark">✓</div>
+              <div className="footer-mark">
+                ✓
+              </div>
 
-              <span>TaskFlow</span>
+              <span>
+                TaskFlow
+              </span>
             </div>
 
             <p>
-              Smart task management made simple.
-              Plan your work, stay organized, and
+              Smart task management
+              made simple. Plan your
+              work, stay organized, and
               get things done efficiently.
             </p>
           </div>
 
           <div className="footer-column">
-            <h3>Product</h3>
+            <h3>
+              Product
+            </h3>
 
-            <span>Task Management</span>
-            <span>Priority Tracking</span>
-            <span>Due Date Management</span>
-            <span>Progress Tracking</span>
+            <span>
+              Task Management
+            </span>
+
+            <span>
+              Priority Tracking
+            </span>
+
+            <span>
+              Due Date Management
+            </span>
+
+            <span>
+              Progress Tracking
+            </span>
+
+            <span>
+              Task Analytics
+            </span>
           </div>
 
           <div className="footer-column">
-            <h3>Stay Productive</h3>
+            <h3>
+              Stay Productive
+            </h3>
 
             <p>
-              Simple tools designed to help you
-              stay focused, organized and
-              productive.
+              Simple tools designed to
+              help you stay focused,
+              organized and productive.
             </p>
           </div>
         </div>
 
         <div className="footer-bottom">
           <span>
-            © 2026 TaskFlow. All rights reserved.
+            © 2026 TaskFlow. All rights
+            reserved.
           </span>
 
           <span>
@@ -1341,25 +2050,222 @@ function App() {
               : "✓"}
           </span>
 
-          <span>{message}</span>
+          <span>
+            {message}
+          </span>
+        </div>
+      )}
+
+      {/* ================= VIEW MODAL ================= */}
+
+      {viewingTask && (
+        <div
+          className="modal-overlay"
+          onClick={() =>
+            setViewingTask(null)
+          }
+        >
+          <div
+            className="view-modal"
+            onClick={(e) =>
+              e.stopPropagation()
+            }
+          >
+            <div className="view-modal-header">
+              <div>
+                <div className="section-kicker">
+                  TASK DETAILS
+                </div>
+
+                <h2>
+                  Task Information
+                </h2>
+              </div>
+
+              <button
+                className="modal-close"
+                onClick={() =>
+                  setViewingTask(null)
+                }
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="view-task-title">
+              <div className="view-task-icon">
+                {viewingTask.completed
+                  ? "✓"
+                  : "📝"}
+              </div>
+
+              <div>
+                <h3>
+                  {
+                    viewingTask.title
+                  }
+                </h3>
+
+                <span
+                  className={`priority-badge ${String(
+                    viewingTask.priority ||
+                      "Medium"
+                  ).toLowerCase()}`}
+                >
+                  {
+                    viewingTask.priority ||
+                      "Medium"
+                  }
+                </span>
+              </div>
+            </div>
+
+            <div className="view-detail-box">
+              <span>
+                Description
+              </span>
+
+              <p>
+                {viewingTask.description ||
+                  "No description added for this task."}
+              </p>
+            </div>
+
+            <div className="view-details-grid">
+              <div className="view-detail-item">
+                <span>
+                  Category
+                </span>
+
+                <strong>
+                  {
+                    CATEGORY_ICONS[
+                      viewingTask.category ||
+                        "Other"
+                    ]
+                  }{" "}
+                  {
+                    viewingTask.category ||
+                      "Other"
+                  }
+                </strong>
+              </div>
+
+              <div className="view-detail-item">
+                <span>
+                  Priority
+                </span>
+
+                <strong>
+                  {
+                    viewingTask.priority ||
+                      "Medium"
+                  }
+                </strong>
+              </div>
+
+              <div className="view-detail-item">
+                <span>
+                  Due Date
+                </span>
+
+                <strong>
+                  📅{" "}
+                  {formatDate(
+                    viewingTask.dueDate
+                  )}
+                </strong>
+              </div>
+
+              <div className="view-detail-item">
+                <span>
+                  Status
+                </span>
+
+                <strong>
+                  {viewingTask.completed
+                    ? "✓ Completed"
+                    : isOverdue(
+                        viewingTask
+                      )
+                    ? "⚠ Overdue"
+                    : "⏳ Pending"}
+                </strong>
+              </div>
+
+              <div className="view-detail-item">
+                <span>
+                  Assigned To
+                </span>
+
+                <strong>
+                  {getAssignedUser(
+                    viewingTask
+                  )
+                    ? `👤 ${getUserName(
+                        getAssignedUser(
+                          viewingTask
+                        )
+                      )}`
+                    : "Not assigned"}
+                </strong>
+              </div>
+            </div>
+
+            <div className="view-modal-actions">
+              <button
+                className="cancel-btn"
+                onClick={() =>
+                  setViewingTask(null)
+                }
+              >
+                Close
+              </button>
+
+              <button
+                className="primary-btn"
+                onClick={() => {
+                  setViewingTask(null);
+                  openEdit(
+                    viewingTask
+                  );
+                }}
+              >
+                Edit Task
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
       {/* ================= EDIT MODAL ================= */}
 
       {editingTask && (
-        <div className="modal-overlay">
-          <div className="modal-card">
+        <div
+          className="modal-overlay"
+          onClick={() =>
+            setEditingTask(null)
+          }
+        >
+          <div
+            className="modal-card"
+            onClick={(e) =>
+              e.stopPropagation()
+            }
+          >
             <div className="modal-header">
               <div>
                 <div className="section-kicker">
                   TASK UPDATE
                 </div>
 
-                <h2>Edit Task</h2>
+                <h2>
+                  Edit Task
+                </h2>
 
                 <p>
-                  Update your task details.
+                  Update your task
+                  details.
                 </p>
               </div>
 
@@ -1377,24 +2283,32 @@ function App() {
               onSubmit={updateTask}
               className="edit-form"
             >
-              <label>Task Title</label>
+              <label>
+                Task Title
+              </label>
 
               <input
                 type="text"
-                value={editingTask.title}
+                value={
+                  editingTask.title
+                }
                 onChange={(e) =>
                   setEditingTask({
                     ...editingTask,
-                    title: e.target.value,
+                    title:
+                      e.target.value,
                   })
                 }
               />
 
-              <label>Description</label>
+              <label>
+                Description
+              </label>
 
               <textarea
                 value={
-                  editingTask.description || ""
+                  editingTask.description ||
+                  ""
                 }
                 onChange={(e) =>
                   setEditingTask({
@@ -1407,7 +2321,9 @@ function App() {
 
               <div className="form-row">
                 <div>
-                  <label>Category</label>
+                  <label>
+                    Category
+                  </label>
 
                   <select
                     value={
@@ -1422,19 +2338,23 @@ function App() {
                       })
                     }
                   >
-                    {CATEGORIES.map((item) => (
-                      <option
-                        key={item}
-                        value={item}
-                      >
-                        {item}
-                      </option>
-                    ))}
+                    {CATEGORIES.map(
+                      (item) => (
+                        <option
+                          key={item}
+                          value={item}
+                        >
+                          {item}
+                        </option>
+                      )
+                    )}
                   </select>
                 </div>
 
                 <div>
-                  <label>Priority</label>
+                  <label>
+                    Priority
+                  </label>
 
                   <select
                     value={
@@ -1464,12 +2384,15 @@ function App() {
                 </div>
               </div>
 
-              <label>Due Date</label>
+              <label>
+                Due Date
+              </label>
 
               <input
                 type="date"
                 value={
-                  editingTask.dueDate || ""
+                  editingTask.dueDate ||
+                  ""
                 }
                 onChange={(e) =>
                   setEditingTask({
@@ -1480,7 +2403,59 @@ function App() {
                 }
               />
 
-              <label>Status</label>
+              <label>
+                Assign To
+              </label>
+
+              <select
+                value={
+                  editingTask.assignedTo ||
+                  ""
+                }
+                onChange={(e) =>
+                  setEditingTask({
+                    ...editingTask,
+                    assignedTo:
+                      e.target.value,
+                  })
+                }
+              >
+                <option value="">
+                  No Assignee
+                </option>
+
+                {users
+                  .filter(
+                    (person) =>
+                      person._id !==
+                      user?.id
+                  )
+                  .map(
+                    (person) => (
+                      <option
+                        key={
+                          person._id
+                        }
+                        value={
+                          person._id
+                        }
+                      >
+                        {getUserName(
+                          person
+                        )}{" "}
+                        (
+                        {
+                          person.email
+                        }
+                        )
+                      </option>
+                    )
+                  )}
+              </select>
+
+              <label>
+                Status
+              </label>
 
               <select
                 value={
@@ -1511,7 +2486,9 @@ function App() {
                   type="button"
                   className="cancel-btn"
                   onClick={() =>
-                    setEditingTask(null)
+                    setEditingTask(
+                      null
+                    )
                   }
                 >
                   Cancel
@@ -1532,16 +2509,29 @@ function App() {
       {/* ================= DELETE MODAL ================= */}
 
       {deleteTaskInfo && (
-        <div className="modal-overlay">
-          <div className="delete-modal">
+        <div
+          className="modal-overlay"
+          onClick={
+            cancelDelete
+          }
+        >
+          <div
+            className="delete-modal"
+            onClick={(e) =>
+              e.stopPropagation()
+            }
+          >
             <div className="delete-icon">
               🗑️
             </div>
 
-            <h2>Delete Task?</h2>
+            <h2>
+              Delete Task?
+            </h2>
 
             <p>
-              Are you sure you want to delete{" "}
+              Are you sure you want to
+              delete{" "}
               <strong>
                 "{deleteTaskInfo.title}"
               </strong>
@@ -1551,14 +2541,18 @@ function App() {
             <div className="modal-actions">
               <button
                 className="cancel-btn"
-                onClick={cancelDelete}
+                onClick={
+                  cancelDelete
+                }
               >
                 Cancel
               </button>
 
               <button
                 className="delete-confirm-btn"
-                onClick={confirmDelete}
+                onClick={
+                  confirmDelete
+                }
               >
                 Delete Task
               </button>

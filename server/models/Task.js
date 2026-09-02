@@ -2,10 +2,18 @@ const mongoose = require("mongoose");
 
 const taskSchema = new mongoose.Schema(
   {
+    // Task kis user ne banaya
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
+    },
+
+    // Task kis user ko assign kiya gaya
+    assignedTo: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
     },
 
     title: {
