@@ -3,8 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 
 const API = "https://taskflow-odcc.onrender.com/api/tasks";
 const AUTH_API = "https://taskflow-odcc.onrender.com/api/auth";
-const USERS_API = "https://taskflow-odcc.onrender.com/api/users";
-
+const USERS_API = "https://taskflow-odcc.onrender.com/api/tasks/users/list";
 const CATEGORIES = ["Work", "Study", "Personal", "Shopping", "Other"];
 
 const CATEGORY_ICONS = {
