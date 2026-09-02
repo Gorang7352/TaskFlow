@@ -278,7 +278,8 @@ app.get("/api/auth/me", authMiddleware, async (req, res) => {
 app.use(
   "/api/tasks",
   authMiddleware,
-  taskRoutes
+  taskRoutes,
+  adminRoutes
 );
 
 /* =========================
