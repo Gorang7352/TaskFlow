@@ -1,5 +1,6 @@
 import "./App.css";
 import { useEffect, useMemo, useState } from "react";
+import AdminDashboard from "./AdminDashboard";
 
 const API = "https://taskflow-odcc.onrender.com/api/tasks";
 const AUTH_API = "https://taskflow-odcc.onrender.com/api/auth";
@@ -689,6 +690,18 @@ function App() {
             char.toUpperCase()
           )
       : "User");
+
+  /* ================= ADMIN DASHBOARD ================= */
+
+  if (user?.role === "admin") {
+    return (
+      <AdminDashboard
+        user={user}
+        token={token}
+        onLogout={logout}
+      />
+    );
+  }
 
   /* ================= AUTH SCREEN ================= */
 

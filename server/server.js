@@ -3,17 +3,18 @@ const mongoose = require("mongoose");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-require("dotenv").config();
+const dotenv = require("dotenv");
 
 const User = require("./models/User");
 const taskRoutes = require("./routes/taskRoutes");
+const adminRoutes = require("./routes/adminRoutes");
+
+const authMiddleware = require("./middleware/authMiddleware");
+const adminMiddleware = require("./middleware/adminMiddleware");
+
+dotenv.config();
 
 const app = express();
-
-const PORT = process.env.PORT || 5000;
-
-const JWT_SECRET =
-  process.env.JWT_SECRET || "taskflow_super_secret_key_2026";
 
 /* =========================
    MIDDLEWARE
@@ -30,16 +31,16 @@ app.use(
 app.use(express.json());
 
 /* =========================
-   DATABASE
+   MONGODB CONNECTION
 ========================= */
 
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => {
-    console.log("MongoDB Connected Successfully");
+    console.log("MongoDB connected successfully");
   })
   .catch((error) => {
-    console.error("MongoDB Connection Error:", error.message);
+    console.error("MongoDB connection error:", error);
   });
 
 /* =========================
@@ -54,7 +55,7 @@ app.get("/", (req, res) => {
 });
 
 /* =========================
-   AUTH - REGISTER
+   REGISTER
 ========================= */
 
 app.post("/api/auth/register", async (req, res) => {
@@ -82,9 +83,9 @@ app.post("/api/auth/register", async (req, res) => {
     });
 
     if (existingUser) {
-      return res.status(400).json({
+      return res.status(409).json({
         success: false,
-        message: "User already exists",
+        message: "User already exists with this email",
       });
     }
 
@@ -103,13 +104,13 @@ app.post("/api/auth/register", async (req, res) => {
         email: user.email,
         role: user.role,
       },
-      JWT_SECRET,
+      process.env.JWT_SECRET,
       {
         expiresIn: "7d",
       }
     );
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: "Registration successful",
       token,
@@ -123,7 +124,7 @@ app.post("/api/auth/register", async (req, res) => {
   } catch (error) {
     console.error("Register Error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Registration failed",
     });
@@ -131,7 +132,7 @@ app.post("/api/auth/register", async (req, res) => {
 });
 
 /* =========================
-   AUTH - LOGIN
+   LOGIN
 ========================= */
 
 app.post("/api/auth/login", async (req, res) => {
@@ -174,15 +175,15 @@ app.post("/api/auth/login", async (req, res) => {
       {
         id: user._id,
         email: user.email,
-        role: user.role || "user",
+        role: user.role,
       },
-      JWT_SECRET,
+      process.env.JWT_SECRET,
       {
         expiresIn: "7d",
       }
     );
 
-    res.json({
+    return res.json({
       success: true,
       message: "Login successful",
       token,
@@ -190,13 +191,13 @@ app.post("/api/auth/login", async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role || "user",
+        role: user.role,
       },
     });
   } catch (error) {
     console.error("Login Error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Login failed",
     });
@@ -204,72 +205,44 @@ app.post("/api/auth/login", async (req, res) => {
 });
 
 /* =========================
-   AUTH MIDDLEWARE
-========================= */
-
-const authMiddleware = async (req, res, next) => {
-  try {
-    const authHeader = req.headers.authorization;
-
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({
-        success: false,
-        message: "Access denied. No token provided.",
-      });
-    }
-
-    const token = authHeader.split(" ")[1];
-
-    const decoded = jwt.verify(token, JWT_SECRET);
-
-    const user = await User.findById(decoded.id).select(
-      "-password"
-    );
-
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: "User not found",
-      });
-    }
-
-    req.user = user;
-
-    next();
-  } catch (error) {
-    console.error("Auth Error:", error.message);
-
-    return res.status(401).json({
-      success: false,
-      message: "Invalid or expired token",
-    });
-  }
-};
-
-/* =========================
    CURRENT USER
 ========================= */
 
-app.get("/api/auth/me", authMiddleware, async (req, res) => {
-  try {
-    res.json({
-      success: true,
-      user: {
-        id: req.user._id,
-        name: req.user.name,
-        email: req.user.email,
-        role: req.user.role || "user",
-      },
-    });
-  } catch (error) {
-    console.error("Current User Error:", error);
+app.get(
+  "/api/auth/me",
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const user = await User.findById(req.user.id).select(
+        "-password"
+      );
 
-    res.status(500).json({
-      success: false,
-      message: "Failed to get current user",
-    });
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+      }
+
+      return res.json({
+        success: true,
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+        },
+      });
+    } catch (error) {
+      console.error("Auth Me Error:", error);
+
+      return res.status(500).json({
+        success: false,
+        message: "Unable to get current user",
+      });
+    }
   }
-});
+);
 
 /* =========================
    TASK ROUTES
@@ -278,7 +251,17 @@ app.get("/api/auth/me", authMiddleware, async (req, res) => {
 app.use(
   "/api/tasks",
   authMiddleware,
-  taskRoutes,
+  taskRoutes
+);
+
+/* =========================
+   ADMIN ROUTES
+========================= */
+
+app.use(
+  "/api/admin",
+  authMiddleware,
+  adminMiddleware,
   adminRoutes
 );
 
@@ -310,6 +293,8 @@ app.use((error, req, res, next) => {
    START SERVER
 ========================= */
 
+const PORT = process.env.PORT || 5000;
+
 app.listen(PORT, () => {
-  console.log(`TaskFlow API running on port ${PORT}`);
+  console.log(`TaskFlow server running on port ${PORT}`);
 });
