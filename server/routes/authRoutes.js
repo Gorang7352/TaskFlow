@@ -1,138 +1,85 @@
-const express = require("express");
-const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-
 const User = require("../models/User");
 
-const router = express.Router();
-
-// =========================
-// REGISTER
-// =========================
-
-router.post("/register", async (req, res) => {
+const authMiddleware = async (req, res, next) => {
   try {
-    const { name, email, password } = req.body;
+    const authHeader = req.headers.authorization;
 
-    // Check required fields
-    if (!name || !email || !password) {
-      return res.status(400).json({
-        message: "Name, email and password are required",
+    if (!authHeader) {
+      return res.status(401).json({
+        success: false,
+        message: "Access denied. No token provided.",
       });
     }
 
-    // Check password length
-    if (password.length < 6) {
-      return res.status(400).json({
-        message: "Password must be at least 6 characters",
+    const parts = authHeader.split(" ");
+
+    if (parts.length !== 2 || parts[0] !== "Bearer") {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid token format.",
       });
     }
 
-    // Check if user already exists
-    const existingUser = await User.findOne({
-      email: email.toLowerCase(),
-    });
+    const token = parts[1];
 
-    if (existingUser) {
-      return res.status(400).json({
-        message: "User already exists",
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET || "taskflow_secret_key"
+    );
+
+    /*
+      Support different ID formats from old/new tokens
+    */
+    const userId =
+      decoded.userId ||
+      decoded.id ||
+      decoded._id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "User ID not found in token.",
       });
     }
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Create user
-    const user = await User.create({
-      name,
-      email: email.toLowerCase(),
-      password: hashedPassword,
-    });
-
-    res.status(201).json({
-      message: "User registered successfully",
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-      },
-    });
-  } catch (error) {
-    console.error("Register Error:", error.message);
-
-    res.status(500).json({
-      message: "Server error during registration",
-    });
-  }
-});
-
-
-// =========================
-// LOGIN
-// =========================
-
-router.post("/login", async (req, res) => {
-  try {
-    const { email, password } = req.body;
-
-    // Check required fields
-    if (!email || !password) {
-      return res.status(400).json({
-        message: "Email and password are required",
-      });
-    }
-
-    // Find user
-    const user = await User.findOne({
-      email: email.toLowerCase(),
-    });
+    /*
+      Get the actual user from MongoDB.
+      This also gives us the correct role.
+    */
+    const user = await User.findById(userId).select(
+      "-password"
+    );
 
     if (!user) {
       return res.status(401).json({
-        message: "Invalid email or password",
+        success: false,
+        message: "User account not found.",
       });
     }
 
-    // Compare password
-    const passwordMatch = await bcrypt.compare(
-      password,
-      user.password
-    );
+    /*
+      Keep a consistent req.user structure
+      for the entire application.
+    */
+    req.user = {
+      _id: user._id,
+      userId: user._id,
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+    };
 
-    if (!passwordMatch) {
-      return res.status(401).json({
-        message: "Invalid email or password",
-      });
-    }
-
-    // Create JWT token
-    const token = jwt.sign(
-      {
-        userId: user._id,
-        email: user.email,
-      },
-      process.env.JWT_SECRET,
-      {
-        expiresIn: "7d",
-      }
-    );
-
-    res.json({
-      message: "Login successful",
-      token,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-      },
-    });
+    next();
   } catch (error) {
-    console.error("Login Error:", error.message);
+    console.error("AUTH ERROR:", error.message);
 
-    res.status(500).json({
-      message: "Server error during login",
+    return res.status(401).json({
+      success: false,
+      message: "Invalid or expired token.",
     });
   }
-});
+};
 
-module.exports = router;
+module.exports = authMiddleware;
