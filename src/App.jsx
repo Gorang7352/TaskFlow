@@ -268,6 +268,18 @@ function App() {
     );
   };
 
+  const getCreatedByUser = (task) => {
+    if (!task?.user) return null;
+
+    if (typeof task.user === "object") {
+      return task.user;
+    }
+
+    return users.find(
+      (person) => person._id === task.user
+    ) || null;
+  };
+
   /* ================= CREATE ================= */
 
   const handleCreateTask = async (e) => {
@@ -2221,6 +2233,32 @@ function App() {
                       )}`
                     : "Not assigned"}
                 </strong>
+              </div>
+
+              <div className="view-detail-item">
+                <span>
+                  Assigned By
+                </span>
+
+                <strong>
+                  {getCreatedByUser(
+                    viewingTask
+                  )
+                    ? `👤 ${getUserName(
+                        getCreatedByUser(
+                          viewingTask
+                        )
+                      )}`
+                    : user
+                    ? `👤 ${getUserName(user)}`
+                    : "Unknown User"}
+                </strong>
+
+                {getCreatedByUser(viewingTask)?.email && (
+                  <small>
+                    📧 {getCreatedByUser(viewingTask).email}
+                  </small>
+                )}
               </div>
             </div>
 
