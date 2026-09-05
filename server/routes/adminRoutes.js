@@ -143,11 +143,20 @@ router.post("/tasks", async (req, res) => {
       }
     }
 
+    /* IMPORTANT:
+       JWT stores the user ID as req.user.userId
+    */
+
     const task = await Task.create({
-      user: req.user._id,
-      assignedTo: assignedUser ? assignedUser._id : null,
+      user: req.user.userId,
+      assignedTo: assignedUser
+        ? assignedUser._id
+        : null,
       title: title.trim(),
-      description: description || "",
+      description:
+        typeof description === "string"
+          ? description.trim()
+          : "",
       category: category || "Other",
       priority: priority || "Medium",
       dueDate: dueDate || null,
@@ -161,7 +170,9 @@ router.post("/tasks", async (req, res) => {
     res.status(201).json({
       success: true,
       message: assignedUser
-        ? `Task created and assigned to ${assignedUser.name || assignedUser.email}`
+        ? `Task created and assigned to ${
+            assignedUser.name || assignedUser.email
+          }`
         : "Task created successfully",
       task: populatedTask,
     });
@@ -171,6 +182,7 @@ router.post("/tasks", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to create task",
+      error: error.message,
     });
   }
 });
@@ -222,7 +234,7 @@ router.get("/users/:id", async (req, res) => {
 
 router.delete("/users/:id", async (req, res) => {
   try {
-    if (req.params.id === req.user._id.toString()) {
+    if (req.params.id === req.user.userId.toString()) {
       return res.status(400).json({
         success: false,
         message: "Admin cannot delete their own account",
