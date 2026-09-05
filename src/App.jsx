@@ -63,6 +63,20 @@ function App() {
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState("success");
 
+  /* ================= NOTIFICATIONS ================= */
+
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  const [seenNotifications, setSeenNotifications] = useState(() => {
+    try {
+      return JSON.parse(
+        localStorage.getItem("taskflowSeenNotifications") || "[]"
+      );
+    } catch {
+      return [];
+    }
+  });
+
   const showMessage = (text, type = "success") => {
     setMessage(text);
     setMessageType(type);
@@ -187,6 +201,7 @@ function App() {
     setUser(null);
     setTasks([]);
     setUsers([]);
+    setShowNotifications(false);
 
     showMessage("You have been logged out.");
   };
@@ -263,8 +278,8 @@ function App() {
       return task.assignedTo;
     }
 
-    return users.find(
-      (person) => person._id === task.assignedTo
+    return (
+      users.find((person) => person._id === task.assignedTo) || null
     );
   };
 
@@ -275,9 +290,69 @@ function App() {
       return task.user;
     }
 
-    return users.find(
-      (person) => person._id === task.user
-    ) || null;
+    return (
+      users.find((person) => person._id === task.user) || null
+    );
+  };
+
+  /* ================= ASSIGNED TASK NOTIFICATIONS ================= */
+
+  const assignedTasks = useMemo(() => {
+    if (!user || !tasks.length) return [];
+
+    return tasks.filter((task) => {
+      if (!task.assignedTo) return false;
+
+      if (typeof task.assignedTo === "object") {
+        return (
+          task.assignedTo?._id === user?._id ||
+          task.assignedTo?._id === user?.id ||
+          task.assignedTo?.id === user?._id ||
+          task.assignedTo?.id === user?.id ||
+          task.assignedTo?.email?.toLowerCase() ===
+            user?.email?.toLowerCase()
+        );
+      }
+
+      return (
+        task.assignedTo === user?._id ||
+        task.assignedTo === user?.id
+      );
+    });
+  }, [tasks, user]);
+
+  const unreadNotifications = useMemo(() => {
+    return assignedTasks.filter(
+      (task) => !seenNotifications.includes(task._id)
+    );
+  }, [assignedTasks, seenNotifications]);
+
+  const markNotificationSeen = (taskId) => {
+    const updated = [...new Set([...seenNotifications, taskId])];
+
+    setSeenNotifications(updated);
+
+    localStorage.setItem(
+      "taskflowSeenNotifications",
+      JSON.stringify(updated)
+    );
+  };
+
+  const markAllNotificationsSeen = () => {
+    const allIds = assignedTasks.map((task) => task._id);
+
+    setSeenNotifications(allIds);
+
+    localStorage.setItem(
+      "taskflowSeenNotifications",
+      JSON.stringify(allIds)
+    );
+  };
+
+  const openNotificationTask = (task) => {
+    markNotificationSeen(task._id);
+    setViewingTask(task);
+    setShowNotifications(false);
   };
 
   /* ================= CREATE ================= */
@@ -518,34 +593,26 @@ function App() {
 
     if (categoryFilter !== "All") {
       result = result.filter(
-        (task) =>
-          (task.category || "Other") === categoryFilter
+        (task) => (task.category || "Other") === categoryFilter
       );
     }
 
     if (priorityFilter !== "All") {
       result = result.filter(
-        (task) =>
-          (task.priority || "Medium") === priorityFilter
+        (task) => (task.priority || "Medium") === priorityFilter
       );
     }
 
     if (statusFilter === "Pending") {
-      result = result.filter(
-        (task) => !task.completed
-      );
+      result = result.filter((task) => !task.completed);
     }
 
     if (statusFilter === "Completed") {
-      result = result.filter(
-        (task) => task.completed
-      );
+      result = result.filter((task) => task.completed);
     }
 
     if (statusFilter === "Overdue") {
-      result = result.filter(
-        (task) => isOverdue(task)
-      );
+      result = result.filter((task) => isOverdue(task));
     }
 
     const priorityValue = {
@@ -627,15 +694,12 @@ function App() {
   const progress =
     tasks.length === 0
       ? 0
-      : Math.round(
-          (completedTasks / tasks.length) * 100
-        );
+      : Math.round((completedTasks / tasks.length) * 100);
 
   const categoryStats = CATEGORIES.reduce(
     (acc, category) => {
       acc[category] = tasks.filter(
-        (task) =>
-          (task.category || "Other") === category
+        (task) => (task.category || "Other") === category
       ).length;
 
       return acc;
@@ -645,18 +709,15 @@ function App() {
 
   const priorityStats = {
     High: tasks.filter(
-      (task) =>
-        (task.priority || "Medium") === "High"
+      (task) => (task.priority || "Medium") === "High"
     ).length,
 
     Medium: tasks.filter(
-      (task) =>
-        (task.priority || "Medium") === "Medium"
+      (task) => (task.priority || "Medium") === "Medium"
     ).length,
 
     Low: tasks.filter(
-      (task) =>
-        (task.priority || "Medium") === "Low"
+      (task) => (task.priority || "Medium") === "Low"
     ).length,
   };
 
@@ -698,9 +759,7 @@ function App() {
       ? user.email
           .split("@")[0]
           .replace(/[._-]/g, " ")
-          .replace(/\b\w/g, (char) =>
-            char.toUpperCase()
-          )
+          .replace(/\b\w/g, (char) => char.toUpperCase())
       : "User");
 
   /* ================= ADMIN DASHBOARD ================= */
@@ -740,10 +799,7 @@ function App() {
               : "Start organizing your work with TaskFlow."}
           </p>
 
-          <form
-            className="auth-form"
-            onSubmit={handleAuth}
-          >
+          <form className="auth-form" onSubmit={handleAuth}>
             {authMode === "register" && (
               <>
                 <label>Full Name</label>
@@ -870,6 +926,167 @@ function App() {
           </nav>
 
           <div className="header-right">
+            {/* ================= NOTIFICATION BELL ================= */}
+
+            <div className="notification-wrapper">
+              <button
+                className={`notification-btn ${
+                  showNotifications ? "active" : ""
+                }`}
+                onClick={() =>
+                  setShowNotifications((prev) => !prev)
+                }
+                aria-label="Notifications"
+                title="Notifications"
+              >
+                <span className="notification-bell">
+                  🔔
+                </span>
+
+                {unreadNotifications.length > 0 && (
+                  <span className="notification-count">
+                    {unreadNotifications.length > 99
+                      ? "99+"
+                      : unreadNotifications.length}
+                  </span>
+                )}
+              </button>
+
+              {showNotifications && (
+                <>
+                  <div
+                    className="notification-backdrop"
+                    onClick={() =>
+                      setShowNotifications(false)
+                    }
+                  />
+
+                  <div className="notification-panel">
+                    <div className="notification-header">
+                      <div>
+                        <strong>Notifications</strong>
+
+                        <span>
+                          {unreadNotifications.length > 0
+                            ? `${unreadNotifications.length} unread`
+                            : "You're all caught up"}
+                        </span>
+                      </div>
+
+                      {assignedTasks.length > 0 && (
+                        <button
+                          className="mark-all-btn"
+                          onClick={markAllNotificationsSeen}
+                        >
+                          Mark all read
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="notification-list">
+                      {assignedTasks.length === 0 ? (
+                        <div className="notification-empty">
+                          <div className="notification-empty-icon">
+                            🔔
+                          </div>
+
+                          <h3>No notifications</h3>
+
+                          <p>
+                            You don't have any assigned
+                            tasks right now.
+                          </p>
+                        </div>
+                      ) : (
+                        assignedTasks
+                          .slice()
+                          .reverse()
+                          .map((task) => {
+                            const assignedBy =
+                              getCreatedByUser(task);
+
+                            const isUnread =
+                              !seenNotifications.includes(
+                                task._id
+                              );
+
+                            return (
+                              <button
+                                key={task._id}
+                                className={`notification-item ${
+                                  isUnread
+                                    ? "unread"
+                                    : ""
+                                }`}
+                                onClick={() =>
+                                  openNotificationTask(
+                                    task
+                                  )
+                                }
+                              >
+                                <div className="notification-item-icon">
+                                  📋
+                                </div>
+
+                                <div className="notification-item-content">
+                                  <div className="notification-item-top">
+                                    <strong>
+                                      {isUnread
+                                        ? "New Task Assigned"
+                                        : "Assigned Task"}
+                                    </strong>
+
+                                    {isUnread && (
+                                      <span className="notification-dot" />
+                                    )}
+                                  </div>
+
+                                  <h4>
+                                    {task.title}
+                                  </h4>
+
+                                  <p>
+                                    {assignedBy
+                                      ? `Assigned by ${getUserName(
+                                          assignedBy
+                                        )}`
+                                      : "A task has been assigned to you"}
+                                  </p>
+
+                                  <div className="notification-meta">
+                                    <span>
+                                      {CATEGORY_ICONS[
+                                        task.category ||
+                                          "Other"
+                                      ]}{" "}
+                                      {task.category ||
+                                        "Other"}
+                                    </span>
+
+                                    {task.dueDate && (
+                                      <span>
+                                        📅{" "}
+                                        {formatDate(
+                                          task.dueDate
+                                        )}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <span className="notification-view">
+                                    View Task →
+                                  </span>
+                                </div>
+                              </button>
+                            );
+                          })
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
             <div className="welcome-user">
               Hi, {displayName} 👋
             </div>
@@ -921,9 +1138,7 @@ function App() {
                 QUICK ACTIONS
               </span>
 
-              <h2>
-                What would you like to do?
-              </h2>
+              <h2>What would you like to do?</h2>
 
               <p>
                 Jump directly to the most important
@@ -936,19 +1151,13 @@ function App() {
             <button
               className="quick-action-card primary-action"
               onClick={() =>
-                scrollToSection(
-                  "create-task-section"
-                )
+                scrollToSection("create-task-section")
               }
             >
-              <div className="quick-action-icon">
-                ＋
-              </div>
+              <div className="quick-action-icon">＋</div>
 
               <div>
-                <strong>
-                  Create New Task
-                </strong>
+                <strong>Create New Task</strong>
                 <span>
                   Add a new task to your workspace
                 </span>
@@ -960,9 +1169,7 @@ function App() {
             <button
               className="quick-action-card"
               onClick={() =>
-                scrollToSection(
-                  "analytics-section"
-                )
+                scrollToSection("analytics-section")
               }
             >
               <div className="quick-action-icon">
@@ -970,9 +1177,7 @@ function App() {
               </div>
 
               <div>
-                <strong>
-                  View Analytics
-                </strong>
+                <strong>View Analytics</strong>
                 <span>
                   Check your productivity insights
                 </span>
@@ -992,9 +1197,7 @@ function App() {
               </div>
 
               <div>
-                <strong>
-                  Manage Tasks
-                </strong>
+                <strong>Manage Tasks</strong>
                 <span>
                   Search, edit and organize tasks
                 </span>
@@ -1008,9 +1211,7 @@ function App() {
               onClick={fetchTasks}
               disabled={loading}
             >
-              <div className="quick-action-icon">
-                ↻
-              </div>
+              <div className="quick-action-icon">↻</div>
 
               <div>
                 <strong>
@@ -1033,9 +1234,7 @@ function App() {
 
         <section className="stats-grid">
           <div className="stat-card">
-            <div className="stat-icon blue">
-              📅
-            </div>
+            <div className="stat-icon blue">📅</div>
 
             <div className="stat-content">
               <span>Today's Tasks</span>
@@ -1045,46 +1244,32 @@ function App() {
           </div>
 
           <div className="stat-card">
-            <div className="stat-icon red">
-              ⚠️
-            </div>
+            <div className="stat-icon red">⚠️</div>
 
             <div className="stat-content">
               <span>Overdue</span>
               <strong>{overdueTasks}</strong>
-              <small>
-                Unfinished past deadlines
-              </small>
+              <small>Unfinished past deadlines</small>
             </div>
           </div>
 
           <div className="stat-card">
-            <div className="stat-icon orange">
-              🔥
-            </div>
+            <div className="stat-icon orange">🔥</div>
 
             <div className="stat-content">
               <span>High Priority</span>
-              <strong>
-                {highPriorityTasks}
-              </strong>
-              <small>
-                Important tasks
-              </small>
+              <strong>{highPriorityTasks}</strong>
+              <small>Important tasks</small>
             </div>
           </div>
 
           <div className="stat-card">
-            <div className="stat-icon green">
-              ✓
-            </div>
+            <div className="stat-icon green">✓</div>
 
             <div className="stat-content">
               <span>Completion Rate</span>
               <strong>{progress}%</strong>
-              <small>
-                Overall productivity
-              </small>
+              <small>Overall productivity</small>
             </div>
           </div>
         </section>
@@ -1110,9 +1295,7 @@ function App() {
             <div className="progress-number">
               <strong>{completedTasks}</strong>
 
-              <span>
-                of {tasks.length} completed
-              </span>
+              <span>of {tasks.length} completed</span>
             </div>
           </div>
 
@@ -1126,13 +1309,9 @@ function App() {
           </div>
 
           <div className="progress-footer">
-            <span>
-              {progress}% complete
-            </span>
+            <span>{progress}% complete</span>
 
-            <span>
-              {pendingTasks} pending
-            </span>
+            <span>{pendingTasks} pending</span>
           </div>
         </section>
 
@@ -1165,9 +1344,7 @@ function App() {
                     CATEGORY DISTRIBUTION
                   </span>
 
-                  <h3>
-                    Tasks by Category
-                  </h3>
+                  <h3>Tasks by Category</h3>
                 </div>
 
                 <span className="analytics-total">
@@ -1184,9 +1361,7 @@ function App() {
                     tasks.length === 0
                       ? 0
                       : Math.round(
-                          (count /
-                            tasks.length) *
-                            100
+                          (count / tasks.length) * 100
                         );
 
                   return (
@@ -1196,11 +1371,7 @@ function App() {
                     >
                       <div className="analytics-bar-info">
                         <span>
-                          {
-                            CATEGORY_ICONS[
-                              category
-                            ]
-                          }{" "}
+                          {CATEGORY_ICONS[category]}{" "}
                           {category}
                         </span>
 
@@ -1237,9 +1408,7 @@ function App() {
                     PRIORITY BREAKDOWN
                   </span>
 
-                  <h3>
-                    Tasks by Priority
-                  </h3>
+                  <h3>Tasks by Priority</h3>
                 </div>
 
                 <span className="analytics-total">
@@ -1248,115 +1417,85 @@ function App() {
               </div>
 
               <div className="priority-analytics">
-                {[
-                  "High",
-                  "Medium",
-                  "Low",
-                ].map((priority) => {
-                  const count =
-                    priorityStats[
-                      priority
-                    ];
+                {["High", "Medium", "Low"].map(
+                  (priority) => {
+                    const count =
+                      priorityStats[priority];
 
-                  const pending =
-                    pendingByPriority[
-                      priority
-                    ];
+                    const pending =
+                      pendingByPriority[priority];
 
-                  const percentage =
-                    tasks.length === 0
-                      ? 0
-                      : Math.round(
-                          (count /
-                            tasks.length) *
-                            100
-                        );
+                    const percentage =
+                      tasks.length === 0
+                        ? 0
+                        : Math.round(
+                            (count / tasks.length) * 100
+                          );
 
-                  return (
-                    <div
-                      className="priority-analytics-row"
-                      key={priority}
-                    >
+                    return (
                       <div
-                        className={`priority-dot ${priority.toLowerCase()}`}
-                      />
-
-                      <div className="priority-main">
-                        <div>
-                          <strong>
-                            {priority}
-                          </strong>
-
-                          <span>
-                            {pending} pending
-                          </span>
-                        </div>
-
-                        <div className="priority-count">
-                          {count}
-                        </div>
-                      </div>
-
-                      <div className="priority-mini-track">
+                        className="priority-analytics-row"
+                        key={priority}
+                      >
                         <div
-                          className={`priority-mini-fill ${priority.toLowerCase()}`}
-                          style={{
-                            width: `${
-                              (count /
-                                maxPriorityCount) *
-                              100
-                            }%`,
-                          }}
+                          className={`priority-dot ${priority.toLowerCase()}`}
                         />
-                      </div>
 
-                      <small>
-                        {percentage}%
-                      </small>
-                    </div>
-                  );
-                })}
+                        <div className="priority-main">
+                          <div>
+                            <strong>{priority}</strong>
+
+                            <span>
+                              {pending} pending
+                            </span>
+                          </div>
+
+                          <div className="priority-count">
+                            {count}
+                          </div>
+                        </div>
+
+                        <div className="priority-mini-track">
+                          <div
+                            className={`priority-mini-fill ${priority.toLowerCase()}`}
+                            style={{
+                              width: `${
+                                (count /
+                                  maxPriorityCount) *
+                                100
+                              }%`,
+                            }}
+                          />
+                        </div>
+
+                        <small>{percentage}%</small>
+                      </div>
+                    );
+                  }
+                )}
               </div>
             </div>
           </div>
 
           <div className="analytics-summary">
             <div>
-              <span>
-                📊 Total Tasks
-              </span>
-
+              <span>📊 Total Tasks</span>
               <strong>{tasks.length}</strong>
             </div>
 
             <div>
-              <span>
-                ✅ Completed
-              </span>
-
-              <strong>
-                {completedTasks}
-              </strong>
+              <span>✅ Completed</span>
+              <strong>{completedTasks}</strong>
             </div>
 
             <div>
-              <span>
-                ⏳ Pending
-              </span>
-
-              <strong>
-                {pendingTasks}
-              </strong>
+              <span>⏳ Pending</span>
+              <strong>{pendingTasks}</strong>
             </div>
 
             <div>
-              <span>
-                ⚠️ Overdue
-              </span>
-
-              <strong>
-                {overdueTasks}
-              </strong>
+              <span>⚠️ Overdue</span>
+              <strong>{overdueTasks}</strong>
             </div>
           </div>
         </section>
@@ -1368,35 +1507,25 @@ function App() {
           id="create-task-section"
         >
           <div className="section-heading">
-            <div className="heading-icon">
-              ✨
-            </div>
+            <div className="heading-icon">✨</div>
 
             <div>
               <div className="section-kicker">
                 GET THINGS DONE
               </div>
 
-              <h2>
-                Create New Task
-              </h2>
+              <h2>Create New Task</h2>
 
-              <p>
-                Add something to your task list
-              </p>
+              <p>Add something to your task list</p>
             </div>
           </div>
 
           <form
             className="create-form"
-            onSubmit={
-              handleCreateTask
-            }
+            onSubmit={handleCreateTask}
           >
             <div className="form-field full">
-              <label>
-                Task Title
-              </label>
+              <label>Task Title</label>
 
               <input
                 type="text"
@@ -1412,154 +1541,102 @@ function App() {
             </div>
 
             <div className="form-field full">
-              <label>
-                Description
-              </label>
+              <label>Description</label>
 
               <textarea
                 placeholder="Add task details..."
-                value={
-                  form.description
-                }
+                value={form.description}
                 onChange={(e) =>
                   setForm({
                     ...form,
-                    description:
-                      e.target.value,
+                    description: e.target.value,
                   })
                 }
               />
             </div>
 
             <div className="form-field">
-              <label>
-                Category
-              </label>
+              <label>Category</label>
 
               <select
-                value={
-                  form.category
-                }
+                value={form.category}
                 onChange={(e) =>
                   setForm({
                     ...form,
-                    category:
-                      e.target.value,
+                    category: e.target.value,
                   })
                 }
               >
-                {CATEGORIES.map(
-                  (item) => (
-                    <option
-                      key={item}
-                      value={item}
-                    >
-                      {item}
-                    </option>
-                  )
-                )}
+                {CATEGORIES.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
               </select>
             </div>
 
             <div className="form-field">
-              <label>
-                Priority
-              </label>
+              <label>Priority</label>
 
               <select
-                value={
-                  form.priority
-                }
+                value={form.priority}
                 onChange={(e) =>
                   setForm({
                     ...form,
-                    priority:
-                      e.target.value,
+                    priority: e.target.value,
                   })
                 }
               >
-                <option value="High">
-                  High
-                </option>
-
-                <option value="Medium">
-                  Medium
-                </option>
-
-                <option value="Low">
-                  Low
-                </option>
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+                <option value="Low">Low</option>
               </select>
             </div>
 
             <div className="form-field">
-              <label>
-                Due Date
-              </label>
+              <label>Due Date</label>
 
               <input
                 type="date"
-                value={
-                  form.dueDate
-                }
+                value={form.dueDate}
                 onChange={(e) =>
                   setForm({
                     ...form,
-                    dueDate:
-                      e.target.value,
+                    dueDate: e.target.value,
                   })
                 }
               />
             </div>
 
             <div className="form-field assign-field">
-              <label>
-                Assign To
-              </label>
+              <label>Assign To</label>
 
               <select
-                value={
-                  form.assignedTo || ""
-                }
+                value={form.assignedTo || ""}
                 onChange={(e) =>
                   setForm({
                     ...form,
-                    assignedTo:
-                      e.target.value,
+                    assignedTo: e.target.value,
                   })
                 }
               >
-                <option value="">
-                  No Assignee
-                </option>
+                <option value="">No Assignee</option>
 
                 {users
                   .filter(
                     (person) =>
-                      person._id !==
-                      user?.id
+                      person._id !== user?.id &&
+                      person._id !== user?._id
                   )
-                  .map(
-                    (person) => (
-                      <option
-                        key={
-                          person._id
-                        }
-                        value={
-                          person._id
-                        }
-                      >
-                        {getUserName(
-                          person
-                        )}{" "}
-                        (
-                        {
-                          person.email
-                        }
-                        )
-                      </option>
-                    )
-                  )}
+                  .map((person) => (
+                    <option
+                      key={person._id}
+                      value={person._id}
+                    >
+                      {getUserName(person)} (
+                      {person.email})
+                    </option>
+                  ))}
               </select>
             </div>
 
@@ -1586,55 +1663,37 @@ function App() {
                 ORGANIZE
               </div>
 
-              <h2>
-                Category Overview
-              </h2>
+              <h2>Category Overview</h2>
 
-              <p>
-                Tasks grouped by category
-              </p>
+              <p>Tasks grouped by category</p>
             </div>
           </div>
 
           <div className="category-grid">
-            {CATEGORIES.map(
-              (category) => (
-                <div
-                  className="category-stat-card"
-                  key={category}
-                >
-                  <div className="category-icon">
-                    {
-                      CATEGORY_ICONS[
-                        category
-                      ]
-                    }
-                  </div>
-
-                  <div className="category-info">
-                    <span>
-                      {category}
-                    </span>
-
-                    <strong>
-                      {
-                        categoryStats[
-                          category
-                        ]
-                      }
-                    </strong>
-
-                    <small>
-                      {categoryStats[
-                        category
-                      ] === 1
-                        ? "task"
-                        : "tasks"}
-                    </small>
-                  </div>
+            {CATEGORIES.map((category) => (
+              <div
+                className="category-stat-card"
+                key={category}
+              >
+                <div className="category-icon">
+                  {CATEGORY_ICONS[category]}
                 </div>
-              )
-            )}
+
+                <div className="category-info">
+                  <span>{category}</span>
+
+                  <strong>
+                    {categoryStats[category]}
+                  </strong>
+
+                  <small>
+                    {categoryStats[category] === 1
+                      ? "task"
+                      : "tasks"}
+                  </small>
+                </div>
+              </div>
+            ))}
           </div>
         </section>
 
@@ -1650,14 +1709,11 @@ function App() {
                 YOUR WORKSPACE
               </div>
 
-              <h2>
-                Your Tasks
-              </h2>
+              <h2>Your Tasks</h2>
 
               <p>
                 {filteredTasks.length}{" "}
-                {filteredTasks.length ===
-                1
+                {filteredTasks.length === 1
                   ? "task"
                   : "tasks"}{" "}
                 shown
@@ -1682,117 +1738,71 @@ function App() {
                 placeholder="Search tasks..."
                 value={search}
                 onChange={(e) =>
-                  setSearch(
-                    e.target.value
-                  )
+                  setSearch(e.target.value)
                 }
               />
             </div>
 
             <select
-              value={
-                categoryFilter
-              }
+              value={categoryFilter}
               onChange={(e) =>
-                setCategoryFilter(
-                  e.target.value
-                )
+                setCategoryFilter(e.target.value)
               }
             >
               <option value="All">
                 All Categories
               </option>
 
-              {CATEGORIES.map(
-                (item) => (
-                  <option
-                    key={item}
-                    value={item}
-                  >
-                    {item}
-                  </option>
-                )
-              )}
+              {CATEGORIES.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
             </select>
 
             <select
-              value={
-                priorityFilter
-              }
+              value={priorityFilter}
               onChange={(e) =>
-                setPriorityFilter(
-                  e.target.value
-                )
+                setPriorityFilter(e.target.value)
               }
             >
               <option value="All">
                 All Priorities
               </option>
 
-              <option value="High">
-                High
-              </option>
-
-              <option value="Medium">
-                Medium
-              </option>
-
-              <option value="Low">
-                Low
-              </option>
+              <option value="High">High</option>
+              <option value="Medium">Medium</option>
+              <option value="Low">Low</option>
             </select>
 
             <select
-              value={
-                statusFilter
-              }
+              value={statusFilter}
               onChange={(e) =>
-                setStatusFilter(
-                  e.target.value
-                )
+                setStatusFilter(e.target.value)
               }
             >
-              <option value="All">
-                All Status
-              </option>
-
-              <option value="Pending">
-                Pending
-              </option>
-
+              <option value="All">All Status</option>
+              <option value="Pending">Pending</option>
               <option value="Completed">
                 Completed
               </option>
-
-              <option value="Overdue">
-                Overdue
-              </option>
+              <option value="Overdue">Overdue</option>
             </select>
 
             <select
               value={sortBy}
               onChange={(e) =>
-                setSortBy(
-                  e.target.value
-                )
+                setSortBy(e.target.value)
               }
             >
-              <option value="Newest">
-                Newest
-              </option>
-
-              <option value="Oldest">
-                Oldest
-              </option>
-
+              <option value="Newest">Newest</option>
+              <option value="Oldest">Oldest</option>
               <option value="Priority High">
                 Priority High
               </option>
-
               <option value="Priority Low">
                 Priority Low
               </option>
-
               <option value="Due Date">
                 Due Date
               </option>
@@ -1804,179 +1814,140 @@ function App() {
               <div className="empty-state">
                 <div className="loading-spinner" />
 
-                <h3>
-                  Loading tasks...
-                </h3>
+                <h3>Loading tasks...</h3>
 
                 <p>
-                  Please wait while
-                  your tasks are
+                  Please wait while your tasks are
                   loading.
                 </p>
               </div>
-            ) : filteredTasks.length ===
-              0 ? (
+            ) : filteredTasks.length === 0 ? (
               <div className="empty-state">
-                <div className="empty-icon">
-                  📝
-                </div>
+                <div className="empty-icon">📝</div>
 
-                <h3>
-                  No tasks found
-                </h3>
+                <h3>No tasks found</h3>
 
                 <p>
-                  Create a task or
-                  change your filters.
+                  Create a task or change your
+                  filters.
                 </p>
               </div>
             ) : (
-              filteredTasks.map(
-                (task) => {
-                  const assignedUser =
-                    getAssignedUser(
-                      task
-                    );
+              filteredTasks.map((task) => {
+                const assignedUser =
+                  getAssignedUser(task);
 
-                  return (
-                    <div
-                      className={`task-item ${
-                        task.completed
-                          ? "completed-task"
-                          : ""
-                      }`}
-                      key={task._id}
-                    >
-                      <div className="task-main">
-                        <button
-                          className={`complete-btn ${
-                            task.completed
-                              ? "completed"
-                              : ""
-                          }`}
-                          onClick={() =>
-                            toggleComplete(
-                              task
-                            )
-                          }
-                        >
-                          {task.completed
-                            ? "✓"
-                            : ""}
-                        </button>
+                return (
+                  <div
+                    className={`task-item ${
+                      task.completed
+                        ? "completed-task"
+                        : ""
+                    }`}
+                    key={task._id}
+                  >
+                    <div className="task-main">
+                      <button
+                        className={`complete-btn ${
+                          task.completed
+                            ? "completed"
+                            : ""
+                        }`}
+                        onClick={() =>
+                          toggleComplete(task)
+                        }
+                      >
+                        {task.completed ? "✓" : ""}
+                      </button>
 
-                        <div className="task-content">
-                          <div className="task-title-row">
-                            <h3>
-                              {
-                                task.title
-                              }
-                            </h3>
+                      <div className="task-content">
+                        <div className="task-title-row">
+                          <h3>{task.title}</h3>
 
-                            <span
-                              className={`priority-badge ${String(
-                                task.priority ||
-                                  "Medium"
-                              ).toLowerCase()}`}
-                            >
-                              {
-                                task.priority ||
-                                  "Medium"
-                              }
-                            </span>
-                          </div>
+                          <span
+                            className={`priority-badge ${String(
+                              task.priority || "Medium"
+                            ).toLowerCase()}`}
+                          >
+                            {task.priority || "Medium"}
+                          </span>
+                        </div>
 
-                          {task.description && (
-                            <p className="task-description">
-                              {
-                                task.description
-                              }
-                            </p>
-                          )}
+                        {task.description && (
+                          <p className="task-description">
+                            {task.description}
+                          </p>
+                        )}
 
-                          <div className="task-meta">
-                            <span className="category-badge">
-                              {
-                                CATEGORY_ICONS[
-                                  task.category ||
-                                    "Other"
-                                ]
-                              }{" "}
-                              {
-                                task.category ||
-                                  "Other"
-                              }
-                            </span>
+                        <div className="task-meta">
+                          <span className="category-badge">
+                            {
+                              CATEGORY_ICONS[
+                                task.category || "Other"
+                              ]
+                            }{" "}
+                            {task.category || "Other"}
+                          </span>
 
-                            <span className="date-meta">
-                              📅{" "}
-                              {formatDate(
-                                task.dueDate
+                          <span className="date-meta">
+                            📅 {formatDate(task.dueDate)}
+                          </span>
+
+                          {assignedUser && (
+                            <span className="assigned-badge">
+                              👤{" "}
+                              {getUserName(
+                                assignedUser
                               )}
                             </span>
+                          )}
 
-                            {assignedUser && (
-                              <span className="assigned-badge">
-                                👤{" "}
-                                {getUserName(
-                                  assignedUser
-                                )}
-                              </span>
-                            )}
+                          {isOverdue(task) && (
+                            <span className="overdue-label">
+                              Overdue
+                            </span>
+                          )}
 
-                            {isOverdue(
-                              task
-                            ) && (
-                              <span className="overdue-label">
-                                Overdue
-                              </span>
-                            )}
-
-                            {task.completed && (
-                              <span className="completed-label">
-                                ✓ Completed
-                              </span>
-                            )}
-                          </div>
+                          {task.completed && (
+                            <span className="completed-label">
+                              ✓ Completed
+                            </span>
+                          )}
                         </div>
                       </div>
-
-                      <div className="task-actions">
-                        <button
-                          className="view-btn"
-                          onClick={() =>
-                            setViewingTask(
-                              task
-                            )
-                          }
-                        >
-                          View
-                        </button>
-
-                        <button
-                          className="edit-btn"
-                          onClick={() =>
-                            openEdit(task)
-                          }
-                        >
-                          Edit
-                        </button>
-
-                        <button
-                          className="delete-btn"
-                          onClick={() =>
-                            askDeleteTask(
-                              task
-                            )
-                          }
-                        >
-                          Delete
-                        </button>
-                      </div>
                     </div>
-                  );
-                }
-              )
+
+                    <div className="task-actions">
+                      <button
+                        className="view-btn"
+                        onClick={() =>
+                          setViewingTask(task)
+                        }
+                      >
+                        View
+                      </button>
+
+                      <button
+                        className="edit-btn"
+                        onClick={() =>
+                          openEdit(task)
+                        }
+                      >
+                        Edit
+                      </button>
+
+                      <button
+                        className="delete-btn"
+                        onClick={() =>
+                          askDeleteTask(task)
+                        }
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
             )}
           </div>
         </section>
@@ -1988,66 +1959,41 @@ function App() {
         <div className="footer-inner">
           <div className="footer-brand">
             <div className="footer-logo-row">
-              <div className="footer-mark">
-                ✓
-              </div>
+              <div className="footer-mark">✓</div>
 
-              <span>
-                TaskFlow
-              </span>
+              <span>TaskFlow</span>
             </div>
 
             <p>
-              Smart task management
-              made simple. Plan your
-              work, stay organized, and
-              get things done efficiently.
+              Smart task management made simple. Plan
+              your work, stay organized, and get things
+              done efficiently.
             </p>
           </div>
 
           <div className="footer-column">
-            <h3>
-              Product
-            </h3>
+            <h3>Product</h3>
 
-            <span>
-              Task Management
-            </span>
-
-            <span>
-              Priority Tracking
-            </span>
-
-            <span>
-              Due Date Management
-            </span>
-
-            <span>
-              Progress Tracking
-            </span>
-
-            <span>
-              Task Analytics
-            </span>
+            <span>Task Management</span>
+            <span>Priority Tracking</span>
+            <span>Due Date Management</span>
+            <span>Progress Tracking</span>
+            <span>Task Analytics</span>
           </div>
 
           <div className="footer-column">
-            <h3>
-              Stay Productive
-            </h3>
+            <h3>Stay Productive</h3>
 
             <p>
-              Simple tools designed to
-              help you stay focused,
-              organized and productive.
+              Simple tools designed to help you stay
+              focused, organized and productive.
             </p>
           </div>
         </div>
 
         <div className="footer-bottom">
           <span>
-            © 2026 TaskFlow. All rights
-            reserved.
+            © 2026 TaskFlow. All rights reserved.
           </span>
 
           <span>
@@ -2069,14 +2015,10 @@ function App() {
           }`}
         >
           <span className="toast-icon">
-            {messageType === "error"
-              ? "!"
-              : "✓"}
+            {messageType === "error" ? "!" : "✓"}
           </span>
 
-          <span>
-            {message}
-          </span>
+          <span>{message}</span>
         </div>
       )}
 
@@ -2085,15 +2027,11 @@ function App() {
       {viewingTask && (
         <div
           className="modal-overlay"
-          onClick={() =>
-            setViewingTask(null)
-          }
+          onClick={() => setViewingTask(null)}
         >
           <div
             className="view-modal"
-            onClick={(e) =>
-              e.stopPropagation()
-            }
+            onClick={(e) => e.stopPropagation()}
           >
             <div className="view-modal-header">
               <div>
@@ -2101,16 +2039,12 @@ function App() {
                   TASK DETAILS
                 </div>
 
-                <h2>
-                  Task Information
-                </h2>
+                <h2>Task Information</h2>
               </div>
 
               <button
                 className="modal-close"
-                onClick={() =>
-                  setViewingTask(null)
-                }
+                onClick={() => setViewingTask(null)}
               >
                 ×
               </button>
@@ -2118,36 +2052,24 @@ function App() {
 
             <div className="view-task-title">
               <div className="view-task-icon">
-                {viewingTask.completed
-                  ? "✓"
-                  : "📝"}
+                {viewingTask.completed ? "✓" : "📝"}
               </div>
 
               <div>
-                <h3>
-                  {
-                    viewingTask.title
-                  }
-                </h3>
+                <h3>{viewingTask.title}</h3>
 
                 <span
                   className={`priority-badge ${String(
-                    viewingTask.priority ||
-                      "Medium"
+                    viewingTask.priority || "Medium"
                   ).toLowerCase()}`}
                 >
-                  {
-                    viewingTask.priority ||
-                      "Medium"
-                  }
+                  {viewingTask.priority || "Medium"}
                 </span>
               </div>
             </div>
 
             <div className="view-detail-box">
-              <span>
-                Description
-              </span>
+              <span>Description</span>
 
               <p>
                 {viewingTask.description ||
@@ -2157,70 +2079,48 @@ function App() {
 
             <div className="view-details-grid">
               <div className="view-detail-item">
-                <span>
-                  Category
-                </span>
+                <span>Category</span>
 
                 <strong>
                   {
                     CATEGORY_ICONS[
-                      viewingTask.category ||
-                        "Other"
+                      viewingTask.category || "Other"
                     ]
                   }{" "}
-                  {
-                    viewingTask.category ||
-                      "Other"
-                  }
+                  {viewingTask.category || "Other"}
                 </strong>
               </div>
 
               <div className="view-detail-item">
-                <span>
-                  Priority
-                </span>
+                <span>Priority</span>
 
                 <strong>
-                  {
-                    viewingTask.priority ||
-                      "Medium"
-                  }
+                  {viewingTask.priority || "Medium"}
                 </strong>
               </div>
 
               <div className="view-detail-item">
-                <span>
-                  Due Date
-                </span>
+                <span>Due Date</span>
 
                 <strong>
-                  📅{" "}
-                  {formatDate(
-                    viewingTask.dueDate
-                  )}
+                  📅 {formatDate(viewingTask.dueDate)}
                 </strong>
               </div>
 
               <div className="view-detail-item">
-                <span>
-                  Status
-                </span>
+                <span>Status</span>
 
                 <strong>
                   {viewingTask.completed
                     ? "✓ Completed"
-                    : isOverdue(
-                        viewingTask
-                      )
+                    : isOverdue(viewingTask)
                     ? "⚠ Overdue"
                     : "⏳ Pending"}
                 </strong>
               </div>
 
               <div className="view-detail-item">
-                <span>
-                  Assigned To
-                </span>
+                <span>Assigned To</span>
 
                 <strong>
                   {getAssignedUser(viewingTask)
@@ -2232,15 +2132,14 @@ function App() {
 
                 {getAssignedUser(viewingTask)?.email && (
                   <small>
-                    📧 {getAssignedUser(viewingTask).email}
+                    📧{" "}
+                    {getAssignedUser(viewingTask).email}
                   </small>
                 )}
               </div>
 
               <div className="view-detail-item">
-                <span>
-                  Assigned By
-                </span>
+                <span>Assigned By</span>
 
                 <strong>
                   {getCreatedByUser(viewingTask)
@@ -2266,9 +2165,7 @@ function App() {
             <div className="view-modal-actions">
               <button
                 className="cancel-btn"
-                onClick={() =>
-                  setViewingTask(null)
-                }
+                onClick={() => setViewingTask(null)}
               >
                 Close
               </button>
@@ -2277,9 +2174,7 @@ function App() {
                 className="primary-btn"
                 onClick={() => {
                   setViewingTask(null);
-                  openEdit(
-                    viewingTask
-                  );
+                  openEdit(viewingTask);
                 }}
               >
                 Edit Task
@@ -2294,15 +2189,11 @@ function App() {
       {editingTask && (
         <div
           className="modal-overlay"
-          onClick={() =>
-            setEditingTask(null)
-          }
+          onClick={() => setEditingTask(null)}
         >
           <div
             className="modal-card"
-            onClick={(e) =>
-              e.stopPropagation()
-            }
+            onClick={(e) => e.stopPropagation()}
           >
             <div className="modal-header">
               <div>
@@ -2310,21 +2201,14 @@ function App() {
                   TASK UPDATE
                 </div>
 
-                <h2>
-                  Edit Task
-                </h2>
+                <h2>Edit Task</h2>
 
-                <p>
-                  Update your task
-                  details.
-                </p>
+                <p>Update your task details.</p>
               </div>
 
               <button
                 className="modal-close"
-                onClick={() =>
-                  setEditingTask(null)
-                }
+                onClick={() => setEditingTask(null)}
               >
                 ×
               </button>
@@ -2334,181 +2218,130 @@ function App() {
               onSubmit={updateTask}
               className="edit-form"
             >
-              <label>
-                Task Title
-              </label>
+              <label>Task Title</label>
 
               <input
                 type="text"
-                value={
-                  editingTask.title
-                }
+                value={editingTask.title}
                 onChange={(e) =>
                   setEditingTask({
                     ...editingTask,
-                    title:
-                      e.target.value,
+                    title: e.target.value,
                   })
                 }
               />
 
-              <label>
-                Description
-              </label>
+              <label>Description</label>
 
               <textarea
-                value={
-                  editingTask.description ||
-                  ""
-                }
+                value={editingTask.description || ""}
                 onChange={(e) =>
                   setEditingTask({
                     ...editingTask,
-                    description:
-                      e.target.value,
+                    description: e.target.value,
                   })
                 }
               />
 
               <div className="form-row">
                 <div>
-                  <label>
-                    Category
-                  </label>
+                  <label>Category</label>
 
                   <select
                     value={
-                      editingTask.category ||
-                      "Other"
+                      editingTask.category || "Other"
                     }
                     onChange={(e) =>
                       setEditingTask({
                         ...editingTask,
-                        category:
-                          e.target.value,
+                        category: e.target.value,
                       })
                     }
                   >
-                    {CATEGORIES.map(
-                      (item) => (
-                        <option
-                          key={item}
-                          value={item}
-                        >
-                          {item}
-                        </option>
-                      )
-                    )}
+                    {CATEGORIES.map((item) => (
+                      <option
+                        key={item}
+                        value={item}
+                      >
+                        {item}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
                 <div>
-                  <label>
-                    Priority
-                  </label>
+                  <label>Priority</label>
 
                   <select
                     value={
-                      editingTask.priority ||
-                      "Medium"
+                      editingTask.priority || "Medium"
                     }
                     onChange={(e) =>
                       setEditingTask({
                         ...editingTask,
-                        priority:
-                          e.target.value,
+                        priority: e.target.value,
                       })
                     }
                   >
-                    <option value="High">
-                      High
-                    </option>
+                    <option value="High">High</option>
 
                     <option value="Medium">
                       Medium
                     </option>
 
-                    <option value="Low">
-                      Low
-                    </option>
+                    <option value="Low">Low</option>
                   </select>
                 </div>
               </div>
 
-              <label>
-                Due Date
-              </label>
+              <label>Due Date</label>
 
               <input
                 type="date"
-                value={
-                  editingTask.dueDate ||
-                  ""
-                }
+                value={editingTask.dueDate || ""}
                 onChange={(e) =>
                   setEditingTask({
                     ...editingTask,
-                    dueDate:
-                      e.target.value,
+                    dueDate: e.target.value,
                   })
                 }
               />
 
               <div className="edit-assign-field">
-                <label>
-                  Assign To
-                </label>
+                <label>Assign To</label>
 
                 <select
-                  value={
-                    editingTask.assignedTo ||
-                    ""
+                  value={editingTask.assignedTo || ""}
+                  onChange={(e) =>
+                    setEditingTask({
+                      ...editingTask,
+                      assignedTo: e.target.value,
+                    })
                   }
-                onChange={(e) =>
-                  setEditingTask({
-                    ...editingTask,
-                    assignedTo:
-                      e.target.value,
-                  })
-                }
-              >
-                <option value="">
-                  No Assignee
-                </option>
+                >
+                  <option value="">
+                    No Assignee
+                  </option>
 
-                {users
-                  .filter(
-                    (person) =>
-                      person._id !==
-                      user?.id
-                  )
-                  .map(
-                    (person) => (
-                      <option
-                        key={
-                          person._id
-                        }
-                        value={
-                          person._id
-                        }
-                      >
-                        {getUserName(
-                          person
-                        )}{" "}
-                        (
-                        {
-                          person.email
-                        }
-                        )
-                      </option>
+                  {users
+                    .filter(
+                      (person) =>
+                        person._id !== user?.id &&
+                        person._id !== user?._id
                     )
-                  )}
+                    .map((person) => (
+                      <option
+                        key={person._id}
+                        value={person._id}
+                      >
+                        {getUserName(person)} (
+                        {person.email})
+                      </option>
+                    ))}
                 </select>
               </div>
 
-              <label>
-                Status
-              </label>
+              <label>Status</label>
 
               <select
                 value={
@@ -2520,8 +2353,7 @@ function App() {
                   setEditingTask({
                     ...editingTask,
                     completed:
-                      e.target.value ===
-                      "Completed",
+                      e.target.value === "Completed",
                   })
                 }
               >
@@ -2539,9 +2371,7 @@ function App() {
                   type="button"
                   className="cancel-btn"
                   onClick={() =>
-                    setEditingTask(
-                      null
-                    )
+                    setEditingTask(null)
                   }
                 >
                   Cancel
@@ -2564,27 +2394,18 @@ function App() {
       {deleteTaskInfo && (
         <div
           className="modal-overlay"
-          onClick={
-            cancelDelete
-          }
+          onClick={cancelDelete}
         >
           <div
             className="delete-modal"
-            onClick={(e) =>
-              e.stopPropagation()
-            }
+            onClick={(e) => e.stopPropagation()}
           >
-            <div className="delete-icon">
-              🗑️
-            </div>
+            <div className="delete-icon">🗑️</div>
 
-            <h2>
-              Delete Task?
-            </h2>
+            <h2>Delete Task?</h2>
 
             <p>
-              Are you sure you want to
-              delete{" "}
+              Are you sure you want to delete{" "}
               <strong>
                 "{deleteTaskInfo.title}"
               </strong>
@@ -2594,18 +2415,14 @@ function App() {
             <div className="modal-actions">
               <button
                 className="cancel-btn"
-                onClick={
-                  cancelDelete
-                }
+                onClick={cancelDelete}
               >
                 Cancel
               </button>
 
               <button
                 className="delete-confirm-btn"
-                onClick={
-                  confirmDelete
-                }
+                onClick={confirmDelete}
               >
                 Delete Task
               </button>
