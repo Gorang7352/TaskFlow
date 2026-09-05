@@ -1,6 +1,7 @@
 const jwt = require("jsonwebtoken");
+const User = require("../models/User");
 
-const authMiddleware = (req, res, next) => {
+const authMiddleware = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
 
@@ -25,7 +26,30 @@ const authMiddleware = (req, res, next) => {
       process.env.JWT_SECRET || "taskflow_secret_key"
     );
 
-    req.user = decoded;
+    const userId = decoded.userId || decoded.id || decoded._id;
+
+    if (!userId) {
+      return res.status(401).json({
+        message: "Invalid token: user ID missing.",
+      });
+    }
+
+    const user = await User.findById(userId).select("-password");
+
+    if (!user) {
+      return res.status(401).json({
+        message: "User not found.",
+      });
+    }
+
+    req.user = {
+      _id: user._id,
+      userId: user._id,
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+    };
 
     next();
   } catch (error) {
