@@ -2223,16 +2223,18 @@ function App() {
                 </span>
 
                 <strong>
-                  {getAssignedUser(
-                    viewingTask
-                  )
+                  {getAssignedUser(viewingTask)
                     ? `👤 ${getUserName(
-                        getAssignedUser(
-                          viewingTask
-                        )
+                        getAssignedUser(viewingTask)
                       )}`
                     : "Not assigned"}
                 </strong>
+
+                {getAssignedUser(viewingTask)?.email && (
+                  <small>
+                    📧 {getAssignedUser(viewingTask).email}
+                  </small>
+                )}
               </div>
 
               <div className="view-detail-item">
@@ -2241,22 +2243,21 @@ function App() {
                 </span>
 
                 <strong>
-                  {getCreatedByUser(
-                    viewingTask
-                  )
+                  {getCreatedByUser(viewingTask)
                     ? `👤 ${getUserName(
-                        getCreatedByUser(
-                          viewingTask
-                        )
+                        getCreatedByUser(viewingTask)
                       )}`
                     : user
                     ? `👤 ${getUserName(user)}`
                     : "Unknown User"}
                 </strong>
 
-                {getCreatedByUser(viewingTask)?.email && (
+                {(getCreatedByUser(viewingTask)?.email ||
+                  user?.email) && (
                   <small>
-                    📧 {getCreatedByUser(viewingTask).email}
+                    📧{" "}
+                    {getCreatedByUser(viewingTask)?.email ||
+                      user?.email}
                   </small>
                 )}
               </div>
