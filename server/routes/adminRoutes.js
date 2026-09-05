@@ -108,6 +108,74 @@ router.get("/tasks", async (req, res) => {
 });
 
 /* =========================
+   CREATE TASK AS ADMIN
+   + ASSIGN TO USER
+========================= */
+
+router.post("/tasks", async (req, res) => {
+  try {
+    const {
+      title,
+      description,
+      category,
+      priority,
+      dueDate,
+      assignedTo,
+    } = req.body;
+
+    if (!title || !title.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Task title is required",
+      });
+    }
+
+    let assignedUser = null;
+
+    if (assignedTo) {
+      assignedUser = await User.findById(assignedTo);
+
+      if (!assignedUser) {
+        return res.status(404).json({
+          success: false,
+          message: "Assigned user not found",
+        });
+      }
+    }
+
+    const task = await Task.create({
+      user: req.user._id,
+      assignedTo: assignedUser ? assignedUser._id : null,
+      title: title.trim(),
+      description: description || "",
+      category: category || "Other",
+      priority: priority || "Medium",
+      dueDate: dueDate || null,
+      completed: false,
+    });
+
+    const populatedTask = await Task.findById(task._id)
+      .populate("user", "name email role")
+      .populate("assignedTo", "name email role");
+
+    res.status(201).json({
+      success: true,
+      message: assignedUser
+        ? `Task created and assigned to ${assignedUser.name || assignedUser.email}`
+        : "Task created successfully",
+      task: populatedTask,
+    });
+  } catch (error) {
+    console.error("Admin Create Task Error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to create task",
+    });
+  }
+});
+
+/* =========================
    GET SINGLE USER
 ========================= */
 

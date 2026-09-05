@@ -2655,4 +2655,442 @@ button:disabled {
   .completion-details {
     gap: 15px;
   }
+}/* =========================================
+   ADMIN CREATE & ASSIGN TASK
+========================================= */
+
+.task-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.admin-create-task-btn {
+  border: none;
+  outline: none;
+  background: #4f46e5;
+  color: white;
+  padding: 11px 18px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.admin-create-task-btn:hover {
+  background: #4338ca;
+  transform: translateY(-1px);
+}
+
+.admin-create-task-btn:active {
+  transform: translateY(0);
+}
+
+.admin-create-task-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+
+/* =========================================
+   MODAL OVERLAY
+========================================= */
+
+.admin-modal-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+
+  background: rgba(15, 23, 42, 0.58);
+
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  padding: 24px;
+  box-sizing: border-box;
+
+  z-index: 99999 !important;
+
+  overflow-y: auto;
+}
+
+
+/* =========================================
+   CREATE TASK MODAL
+========================================= */
+
+.admin-create-modal {
+  width: min(680px, 100%);
+  max-height: calc(100vh - 48px);
+
+  background: #ffffff;
+  border-radius: 18px;
+
+  box-shadow:
+    0 25px 60px rgba(15, 23, 42, 0.25);
+
+  overflow-y: auto;
+
+  animation: adminModalShow 0.22s ease;
+}
+
+@keyframes adminModalShow {
+  from {
+    opacity: 0;
+    transform: translateY(15px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+
+/* =========================================
+   MODAL HEADER
+========================================= */
+
+.admin-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+
+  gap: 20px;
+
+  padding: 26px 28px 20px;
+
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.admin-modal-header .admin-label {
+  margin: 0 0 6px;
+  color: #4f46e5;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+
+.admin-modal-header h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.admin-modal-header p:last-child {
+  margin: 7px 0 0;
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+
+/* =========================================
+   CLOSE BUTTON
+========================================= */
+
+.admin-modal-close {
+  width: 38px;
+  height: 38px;
+
+  flex-shrink: 0;
+
+  border: none;
+  border-radius: 10px;
+
+  background: #f3f4f6;
+  color: #374151;
+
+  font-size: 24px;
+  line-height: 1;
+
+  cursor: pointer;
+
+  transition: all 0.2s ease;
+}
+
+.admin-modal-close:hover {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.admin-modal-close:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+
+/* =========================================
+   FORM
+========================================= */
+
+.admin-task-form {
+  padding: 24px 28px 28px;
+}
+
+.admin-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.admin-form-group label {
+  color: #374151;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.admin-form-group label span {
+  color: #dc2626;
+}
+
+.admin-form-group input,
+.admin-form-group textarea,
+.admin-form-group select {
+  width: 100%;
+  box-sizing: border-box;
+
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+
+  background: #ffffff;
+  color: #111827;
+
+  font-family: inherit;
+  font-size: 14px;
+
+  padding: 12px 13px;
+
+  outline: none;
+
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.admin-form-group input {
+  height: 45px;
+}
+
+.admin-form-group textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+
+.admin-form-group select {
+  height: 45px;
+  cursor: pointer;
+}
+
+.admin-form-group input::placeholder,
+.admin-form-group textarea::placeholder {
+  color: #9ca3af;
+}
+
+.admin-form-group input:focus,
+.admin-form-group textarea:focus,
+.admin-form-group select:focus {
+  border-color: #4f46e5;
+
+  box-shadow:
+    0 0 0 3px rgba(79, 70, 229, 0.12);
+}
+
+
+/* =========================================
+   TWO COLUMN FORM
+========================================= */
+
+.admin-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+.admin-form-row .admin-form-group {
+  min-width: 0;
+}
+
+
+/* =========================================
+   ASSIGNMENT NOTE
+========================================= */
+
+.admin-assignment-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+
+  margin-top: 4px;
+  margin-bottom: 22px;
+
+  padding: 13px 14px;
+
+  border: 1px solid #e0e7ff;
+  border-radius: 10px;
+
+  background: #eef2ff;
+}
+
+.admin-assignment-note span {
+  font-size: 17px;
+  line-height: 1.4;
+}
+
+.admin-assignment-note p {
+  margin: 0;
+
+  color: #4338ca;
+
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+
+/* =========================================
+   MODAL ACTIONS
+========================================= */
+
+.admin-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+
+  padding-top: 6px;
+}
+
+.admin-cancel-btn,
+.admin-submit-btn {
+  min-height: 44px;
+
+  padding: 0 20px;
+
+  border-radius: 10px;
+
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+
+  cursor: pointer;
+
+  transition: all 0.2s ease;
+}
+
+.admin-cancel-btn {
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #374151;
+}
+
+.admin-cancel-btn:hover {
+  background: #f9fafb;
+  border-color: #9ca3af;
+}
+
+.admin-submit-btn {
+  border: none;
+  background: #4f46e5;
+  color: #ffffff;
+}
+
+.admin-submit-btn:hover {
+  background: #4338ca;
+  transform: translateY(-1px);
+}
+
+.admin-submit-btn:disabled,
+.admin-cancel-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none;
+}
+
+
+/* =========================================
+   MOBILE RESPONSIVE
+========================================= */
+
+@media (max-width: 768px) {
+  .task-header-actions {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .task-header-actions .count-badge {
+    align-self: flex-start;
+  }
+
+  .admin-create-task-btn {
+    width: 100%;
+  }
+
+  .admin-modal-overlay {
+    padding: 15px;
+    align-items: center !important;
+  }
+
+  .admin-create-modal {
+    width: 100%;
+    max-height: calc(100vh - 30px);
+    border-radius: 15px;
+  }
+
+  .admin-modal-header {
+    padding: 21px 20px 17px;
+  }
+
+  .admin-modal-header h2 {
+    font-size: 20px;
+  }
+
+  .admin-task-form {
+    padding: 20px;
+  }
+
+  .admin-form-row {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .admin-modal-actions {
+    flex-direction: column-reverse;
+  }
+
+  .admin-cancel-btn,
+  .admin-submit-btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .admin-modal-overlay {
+    padding: 10px;
+  }
+
+  .admin-create-modal {
+    max-height: calc(100vh - 20px);
+    border-radius: 13px;
+  }
+
+  .admin-modal-header {
+    padding: 18px 16px 15px;
+  }
+
+  .admin-task-form {
+    padding: 17px 16px 20px;
+  }
+
+  .admin-modal-close {
+    width: 34px;
+    height: 34px;
+    font-size: 21px;
+  }
 }

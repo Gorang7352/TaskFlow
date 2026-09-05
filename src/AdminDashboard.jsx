@@ -19,7 +19,17 @@ function AdminDashboard({ user, token, onLogout }) {
   const [message, setMessage] = useState("");
   const [activeTab, setActiveTab] = useState("overview");
 
-  /* ================= REQUEST ================= */
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [creatingTask, setCreatingTask] = useState(false);
+
+  const [taskForm, setTaskForm] = useState({
+    title: "",
+    description: "",
+    category: "Other",
+    priority: "Medium",
+    dueDate: "",
+    assignedTo: "",
+  });
 
   const request = async (url, options = {}) => {
     const response = await fetch(url, {
@@ -39,8 +49,6 @@ function AdminDashboard({ user, token, onLogout }) {
 
     return data;
   };
-
-  /* ================= LOAD ADMIN DATA ================= */
 
   const loadAdminData = async () => {
     try {
@@ -76,6 +84,7 @@ function AdminDashboard({ user, token, onLogout }) {
       );
     } catch (error) {
       console.error("Admin Dashboard Error:", error);
+
       setMessage(
         error.message || "Unable to load admin dashboard"
       );
@@ -84,15 +93,11 @@ function AdminDashboard({ user, token, onLogout }) {
     }
   };
 
-  /* ================= INITIAL LOAD ================= */
-
   useEffect(() => {
     if (token) {
       loadAdminData();
     }
   }, [token]);
-
-  /* ================= HELPERS ================= */
 
   const getUserName = (person) => {
     if (!person) return null;
@@ -124,7 +129,85 @@ function AdminDashboard({ user, token, onLogout }) {
     );
   };
 
-  /* ================= DELETE USER ================= */
+  /* =========================
+     CREATE TASK FORM
+  ========================= */
+
+  const handleTaskInput = (event) => {
+    const { name, value } = event.target;
+
+    setTaskForm((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
+  };
+
+  const resetTaskForm = () => {
+    setTaskForm({
+      title: "",
+      description: "",
+      category: "Other",
+      priority: "Medium",
+      dueDate: "",
+      assignedTo: "",
+    });
+  };
+
+  const closeCreateModal = () => {
+    if (creatingTask) return;
+
+    setShowCreateModal(false);
+    resetTaskForm();
+  };
+
+  const createAdminTask = async (event) => {
+    event.preventDefault();
+
+    if (!taskForm.title.trim()) {
+      setMessage("Please enter a task title.");
+      return;
+    }
+
+    try {
+      setCreatingTask(true);
+      setMessage("");
+
+      const data = await request(`${ADMIN_API}/tasks`, {
+        method: "POST",
+        body: JSON.stringify({
+          title: taskForm.title.trim(),
+          description: taskForm.description.trim(),
+          category: taskForm.category,
+          priority: taskForm.priority,
+          dueDate: taskForm.dueDate || null,
+          assignedTo: taskForm.assignedTo || null,
+        }),
+      });
+
+      setShowCreateModal(false);
+      resetTaskForm();
+
+      setMessage(
+        data.message || "Task created successfully."
+      );
+
+      await loadAdminData();
+
+      setActiveTab("tasks");
+    } catch (error) {
+      console.error("Create Admin Task Error:", error);
+
+      setMessage(
+        error.message || "Failed to create task."
+      );
+    } finally {
+      setCreatingTask(false);
+    }
+  };
+
+  /* =========================
+     DELETE USER
+  ========================= */
 
   const deleteUser = async (id) => {
     const confirmed = window.confirm(
@@ -146,7 +229,9 @@ function AdminDashboard({ user, token, onLogout }) {
     }
   };
 
-  /* ================= DELETE TASK ================= */
+  /* =========================
+     DELETE TASK
+  ========================= */
 
   const deleteTask = async (id) => {
     const confirmed = window.confirm(
@@ -168,8 +253,6 @@ function AdminDashboard({ user, token, onLogout }) {
     }
   };
 
-  /* ================= COMPLETION RATE ================= */
-
   const completionRate =
     stats.totalTasks > 0
       ? Math.round(
@@ -177,11 +260,11 @@ function AdminDashboard({ user, token, onLogout }) {
         )
       : 0;
 
-  /* ================= RENDER ================= */
-
   return (
     <div className="admin-page">
-      {/* ================= NAVBAR ================= */}
+      {/* =========================
+          NAVBAR
+      ========================= */}
 
       <nav className="admin-navbar">
         <div className="admin-brand">
@@ -219,11 +302,11 @@ function AdminDashboard({ user, token, onLogout }) {
         </div>
       </nav>
 
-      {/* ================= MAIN ================= */}
+      {/* =========================
+          MAIN
+      ========================= */}
 
       <main className="admin-container">
-        {/* ================= HEADER ================= */}
-
         <section className="admin-header">
           <div>
             <p className="admin-label">
@@ -247,8 +330,6 @@ function AdminDashboard({ user, token, onLogout }) {
           </button>
         </section>
 
-        {/* ================= MESSAGE ================= */}
-
         {message && (
           <div className="admin-message">
             <span>{message}</span>
@@ -262,7 +343,9 @@ function AdminDashboard({ user, token, onLogout }) {
           </div>
         )}
 
-        {/* ================= TABS ================= */}
+        {/* =========================
+            TABS
+        ========================= */}
 
         <div className="admin-tabs">
           <button
@@ -305,8 +388,6 @@ function AdminDashboard({ user, token, onLogout }) {
           </button>
         </div>
 
-        {/* ================= LOADING ================= */}
-
         {loading ? (
           <div className="admin-loading">
             <div className="admin-spinner"></div>
@@ -317,14 +398,12 @@ function AdminDashboard({ user, token, onLogout }) {
           </div>
         ) : (
           <>
-            {/* =====================================================
+            {/* =========================
                 OVERVIEW
-            ===================================================== */}
+            ========================= */}
 
             {activeTab === "overview" && (
               <>
-                {/* ================= STATS ================= */}
-
                 <section className="admin-stats-grid">
                   <div className="admin-stat-card">
                     <div className="admin-stat-icon">
@@ -383,11 +462,7 @@ function AdminDashboard({ user, token, onLogout }) {
                   </div>
                 </section>
 
-                {/* ================= OVERVIEW GRID ================= */}
-
                 <section className="admin-overview-grid">
-                  {/* TASK COMPLETION */}
-
                   <div className="admin-panel">
                     <div className="panel-heading">
                       <div>
@@ -431,8 +506,6 @@ function AdminDashboard({ user, token, onLogout }) {
                       </span>
                     </div>
                   </div>
-
-                  {/* PRIORITY */}
 
                   <div className="admin-panel">
                     <div className="panel-heading">
@@ -483,8 +556,6 @@ function AdminDashboard({ user, token, onLogout }) {
                     </div>
                   </div>
                 </section>
-
-                {/* ================= RECENT TASKS ================= */}
 
                 <section className="admin-panel recent-panel">
                   <div className="panel-heading">
@@ -573,9 +644,9 @@ function AdminDashboard({ user, token, onLogout }) {
               </>
             )}
 
-            {/* =====================================================
+            {/* =========================
                 USERS
-            ===================================================== */}
+            ========================= */}
 
             {activeTab === "users" && (
               <section className="admin-panel">
@@ -714,9 +785,9 @@ function AdminDashboard({ user, token, onLogout }) {
               </section>
             )}
 
-            {/* =====================================================
+            {/* =========================
                 TASKS
-            ===================================================== */}
+            ========================= */}
 
             {activeTab === "tasks" && (
               <section className="admin-panel">
@@ -730,9 +801,20 @@ function AdminDashboard({ user, token, onLogout }) {
                     </p>
                   </div>
 
-                  <span className="count-badge">
-                    {tasks.length} Tasks
-                  </span>
+                  <div className="task-header-actions">
+                    <span className="count-badge">
+                      {tasks.length} Tasks
+                    </span>
+
+                    <button
+                      className="admin-create-task-btn"
+                      onClick={() =>
+                        setShowCreateModal(true)
+                      }
+                    >
+                      + Create & Assign Task
+                    </button>
+                  </div>
                 </div>
 
                 {tasks.length === 0 ? (
@@ -740,6 +822,15 @@ function AdminDashboard({ user, token, onLogout }) {
                     <span>📋</span>
 
                     <p>No tasks found.</p>
+
+                    <button
+                      className="admin-create-task-btn"
+                      onClick={() =>
+                        setShowCreateModal(true)
+                      }
+                    >
+                      + Create First Task
+                    </button>
                   </div>
                 ) : (
                   <div className="admin-table-wrapper">
@@ -787,8 +878,6 @@ function AdminDashboard({ user, token, onLogout }) {
                             <tr
                               key={task._id}
                             >
-                              {/* TASK */}
-
                               <td>
                                 <div className="table-task">
                                   <strong>
@@ -802,8 +891,6 @@ function AdminDashboard({ user, token, onLogout }) {
                                   </span>
                                 </div>
                               </td>
-
-                              {/* CREATED BY */}
 
                               <td>
                                 <div className="task-person">
@@ -831,8 +918,6 @@ function AdminDashboard({ user, token, onLogout }) {
                                   )}
                                 </div>
                               </td>
-
-                              {/* ASSIGNED TO */}
 
                               <td>
                                 {assignedTo ? (
@@ -867,8 +952,6 @@ function AdminDashboard({ user, token, onLogout }) {
                                 )}
                               </td>
 
-                              {/* PRIORITY */}
-
                               <td>
                                 <span
                                   className={`priority-badge ${String(
@@ -880,8 +963,6 @@ function AdminDashboard({ user, token, onLogout }) {
                                     "Medium"}
                                 </span>
                               </td>
-
-                              {/* STATUS */}
 
                               <td>
                                 <span
@@ -896,8 +977,6 @@ function AdminDashboard({ user, token, onLogout }) {
                                     : "Pending"}
                                 </span>
                               </td>
-
-                              {/* DELETE */}
 
                               <td>
                                 <button
@@ -924,7 +1003,206 @@ function AdminDashboard({ user, token, onLogout }) {
         )}
       </main>
 
-      {/* ================= FOOTER ================= */}
+      {/* =========================
+          CREATE TASK MODAL
+      ========================= */}
+
+      {showCreateModal && (
+        <div
+          className="admin-modal-overlay"
+          onMouseDown={(event) => {
+            if (
+              event.target === event.currentTarget &&
+              !creatingTask
+            ) {
+              closeCreateModal();
+            }
+          }}
+        >
+          <div className="admin-create-modal">
+            <div className="admin-modal-header">
+              <div>
+                <p className="admin-label">
+                  ADMIN TASK
+                </p>
+
+                <h2>Create & Assign Task</h2>
+
+                <p>
+                  Create a task and assign it to a
+                  TaskFlow user.
+                </p>
+              </div>
+
+              <button
+                className="admin-modal-close"
+                onClick={closeCreateModal}
+                disabled={creatingTask}
+              >
+                ×
+              </button>
+            </div>
+
+            <form
+              className="admin-task-form"
+              onSubmit={createAdminTask}
+            >
+              <div className="admin-form-group">
+                <label>
+                  Task Title <span>*</span>
+                </label>
+
+                <input
+                  type="text"
+                  name="title"
+                  value={taskForm.title}
+                  onChange={handleTaskInput}
+                  placeholder="Enter task title"
+                  required
+                  autoFocus
+                />
+              </div>
+
+              <div className="admin-form-group">
+                <label>Description</label>
+
+                <textarea
+                  name="description"
+                  value={taskForm.description}
+                  onChange={handleTaskInput}
+                  placeholder="Enter task description"
+                  rows="4"
+                ></textarea>
+              </div>
+
+              <div className="admin-form-row">
+                <div className="admin-form-group">
+                  <label>Category</label>
+
+                  <select
+                    name="category"
+                    value={taskForm.category}
+                    onChange={handleTaskInput}
+                  >
+                    <option value="Work">
+                      Work
+                    </option>
+
+                    <option value="Study">
+                      Study
+                    </option>
+
+                    <option value="Personal">
+                      Personal
+                    </option>
+
+                    <option value="Shopping">
+                      Shopping
+                    </option>
+
+                    <option value="Other">
+                      Other
+                    </option>
+                  </select>
+                </div>
+
+                <div className="admin-form-group">
+                  <label>Priority</label>
+
+                  <select
+                    name="priority"
+                    value={taskForm.priority}
+                    onChange={handleTaskInput}
+                  >
+                    <option value="Low">
+                      Low
+                    </option>
+
+                    <option value="Medium">
+                      Medium
+                    </option>
+
+                    <option value="High">
+                      High
+                    </option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="admin-form-row">
+                <div className="admin-form-group">
+                  <label>Due Date</label>
+
+                  <input
+                    type="date"
+                    name="dueDate"
+                    value={taskForm.dueDate}
+                    onChange={handleTaskInput}
+                  />
+                </div>
+
+                <div className="admin-form-group">
+                  <label>
+                    Assign To
+                  </label>
+
+                  <select
+                    name="assignedTo"
+                    value={taskForm.assignedTo}
+                    onChange={handleTaskInput}
+                  >
+                    <option value="">
+                      No Assignee
+                    </option>
+
+                    {users.map((person) => (
+                      <option
+                        key={person._id}
+                        value={person._id}
+                      >
+                        {person.name
+                          ? `${person.name} — ${person.email}`
+                          : person.email}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="admin-assignment-note">
+                <span>💡</span>
+
+                <p>
+                  The task will be created under your
+                  admin account and assigned to the
+                  selected user.
+                </p>
+              </div>
+
+              <div className="admin-modal-actions">
+                <button
+                  type="button"
+                  className="admin-cancel-btn"
+                  onClick={closeCreateModal}
+                  disabled={creatingTask}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  className="admin-submit-btn"
+                  disabled={creatingTask}
+                >
+                  {creatingTask
+                    ? "Creating..."
+                    : "Create & Assign Task"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       <footer className="admin-footer">
         <p>
