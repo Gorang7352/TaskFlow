@@ -1,85 +1,200 @@
+const express = require("express");
+const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+
 const User = require("../models/User");
 
-const authMiddleware = async (req, res, next) => {
+const router = express.Router();
+
+const ADMIN_REGISTRATION_CODE =
+  process.env.ADMIN_REGISTRATION_CODE || "COLLEGE2026";
+
+// ================= REGISTER =================
+
+router.post("/register", async (req, res) => {
   try {
-    const authHeader = req.headers.authorization;
+    const {
+      name,
+      email,
+      password,
+      accountType,
+      adminCode,
+    } = req.body;
 
-    if (!authHeader) {
-      return res.status(401).json({
-        success: false,
-        message: "Access denied. No token provided.",
+    if (!name || !email || !password) {
+      return res.status(400).json({
+        message:
+          "Name, email and password are required",
       });
     }
 
-    const parts = authHeader.split(" ");
-
-    if (parts.length !== 2 || parts[0] !== "Bearer") {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid token format.",
+    if (password.length < 6) {
+      return res.status(400).json({
+        message:
+          "Password must be at least 6 characters",
       });
     }
 
-    const token = parts[1];
+    const normalizedEmail =
+      email.toLowerCase().trim();
 
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET || "taskflow_secret_key"
+    const existingUser =
+      await User.findOne({
+        email: normalizedEmail,
+      });
+
+    if (existingUser) {
+      return res.status(400).json({
+        message: "User already exists",
+      });
+    }
+
+    // ================= ROLE =================
+
+    let role = "user";
+
+    if (accountType === "admin") {
+      if (!adminCode) {
+        return res.status(400).json({
+          message:
+            "Admin Registration Code is required",
+        });
+      }
+
+      if (
+        adminCode.trim() !==
+        ADMIN_REGISTRATION_CODE
+      ) {
+        return res.status(403).json({
+          message:
+            "Invalid Admin Registration Code",
+        });
+      }
+
+      role = "admin";
+    }
+
+    // ================= PASSWORD =================
+
+    const hashedPassword =
+      await bcrypt.hash(password, 10);
+
+    // ================= CREATE USER =================
+
+    const user = await User.create({
+      name: name.trim(),
+      email: normalizedEmail,
+      password: hashedPassword,
+      role,
+    });
+
+    res.status(201).json({
+      message:
+        role === "admin"
+          ? "Teacher / Admin account created successfully. Please login."
+          : "Student account created successfully. Please login.",
+
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "Register Error:",
+      error.message
     );
 
-    /*
-      Support different ID formats from old/new tokens
-    */
-    const userId =
-      decoded.userId ||
-      decoded.id ||
-      decoded._id;
+    res.status(500).json({
+      message:
+        "Server error during registration",
+    });
+  }
+});
 
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        message: "User ID not found in token.",
+// ================= LOGIN =================
+
+router.post("/login", async (req, res) => {
+  try {
+    const {
+      email,
+      password,
+    } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        message:
+          "Email and password are required",
       });
     }
 
-    /*
-      Get the actual user from MongoDB.
-      This also gives us the correct role.
-    */
-    const user = await User.findById(userId).select(
-      "-password"
-    );
+    const normalizedEmail =
+      email.toLowerCase().trim();
+
+    const user =
+      await User.findOne({
+        email: normalizedEmail,
+      });
 
     if (!user) {
       return res.status(401).json({
-        success: false,
-        message: "User account not found.",
+        message:
+          "Invalid email or password",
       });
     }
 
-    /*
-      Keep a consistent req.user structure
-      for the entire application.
-    */
-    req.user = {
-      _id: user._id,
-      userId: user._id,
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-    };
+    const passwordMatch =
+      await bcrypt.compare(
+        password,
+        user.password
+      );
 
-    next();
+    if (!passwordMatch) {
+      return res.status(401).json({
+        message:
+          "Invalid email or password",
+      });
+    }
+
+    const token = jwt.sign(
+      {
+        userId: user._id,
+        email: user.email,
+        role: user.role,
+      },
+      process.env.JWT_SECRET ||
+        "taskflow_secret_key",
+      {
+        expiresIn: "7d",
+      }
+    );
+
+    res.json({
+      message: "Login successful",
+
+      token,
+
+      user: {
+        id: user._id,
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+    });
   } catch (error) {
-    console.error("AUTH ERROR:", error.message);
+    console.error(
+      "Login Error:",
+      error.message
+    );
 
-    return res.status(401).json({
-      success: false,
-      message: "Invalid or expired token.",
+    res.status(500).json({
+      message:
+        "Server error during login",
     });
   }
-};
+});
 
-module.exports = authMiddleware;
+module.exports = router;
