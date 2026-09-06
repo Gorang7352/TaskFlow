@@ -3452,4 +3452,140 @@ button:disabled {
   .mark-all-btn {
     font-size: 11px;
   }
+}/* =========================================================
+   FIX: EDIT / VIEW / DELETE MODAL SCROLL
+   ========================================================= */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+
+  padding: 30px 20px;
+  overflow-y: auto;
+
+  background: rgba(15, 23, 42, 0.62);
+  backdrop-filter: blur(4px);
+}
+
+/* Edit Modal */
+
+.modal-card {
+  width: min(760px, 100%);
+  max-height: calc(100vh - 60px);
+
+  margin: 0 auto;
+  overflow-y: auto;
+
+  background: #ffffff;
+  border-radius: 20px;
+
+  box-shadow:
+    0 25px 70px rgba(15, 23, 42, 0.25);
+
+  scrollbar-width: thin;
+}
+
+/* Chrome / Edge scrollbar */
+
+.modal-card::-webkit-scrollbar {
+  width: 7px;
+}
+
+.modal-card::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.modal-card::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 20px;
+}
+
+/* Keep modal header visible */
+
+.modal-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+
+  background: #ffffff;
+}
+
+/* View modal */
+
+.view-modal {
+  width: min(700px, 100%);
+  max-height: calc(100vh - 60px);
+
+  margin: 0 auto;
+  overflow-y: auto;
+
+  background: #ffffff;
+  border-radius: 20px;
+
+  box-shadow:
+    0 25px 70px rgba(15, 23, 42, 0.25);
+}
+
+.view-modal::-webkit-scrollbar {
+  width: 7px;
+}
+
+.view-modal::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.view-modal::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 20px;
+}
+
+/* Delete modal */
+
+.delete-modal {
+  width: min(450px, 100%);
+  margin: auto;
+
+  background: #ffffff;
+  border-radius: 20px;
+
+  box-shadow:
+    0 25px 70px rgba(15, 23, 42, 0.25);
+}
+
+/* =========================================================
+   MOBILE MODAL
+   ========================================================= */
+
+@media (max-width: 700px) {
+  .modal-overlay {
+    padding: 15px 10px;
+    align-items: flex-start;
+  }
+
+  .modal-card,
+  .view-modal {
+    max-height: calc(100vh - 30px);
+    border-radius: 16px;
+  }
+
+  .delete-modal {
+    margin: auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .modal-overlay {
+    padding: 10px 8px;
+  }
+
+  .modal-card,
+  .view-modal {
+    max-height: calc(100vh - 20px);
+    border-radius: 14px;
+  }
 }
