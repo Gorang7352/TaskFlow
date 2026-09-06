@@ -1578,38 +1578,6 @@ return (
           />
         </div>
 
-        <div className="form-field assign-field">
-          <label>Assign To</label>
-
-          <select
-            value={form.assignedTo || ""}
-            onChange={(e) =>
-              setForm({
-                ...form,
-                assignedTo: e.target.value,
-              })
-            }
-          >
-            <option value="">No Assignee</option>
-
-            {users
-              .filter(
-                (person) =>
-                  person._id !== user?.id &&
-                  person._id !== user?._id
-              )
-              .map((person) => (
-                <option
-                  key={person._id}
-                  value={person._id}
-                >
-                  {getUserName(person)} (
-                  {person.email})
-                </option>
-              ))}
-          </select>
-        </div>
-
         <div className="form-field button-field">
           <label> </label>
 
@@ -2276,40 +2244,6 @@ return (
               })
             }
           />
-
-          <div className="edit-assign-field">
-            <label>Assign To</label>
-
-            <select
-              value={editingTask.assignedTo || ""}
-              onChange={(e) =>
-                setEditingTask({
-                  ...editingTask,
-                  assignedTo: e.target.value,
-                })
-              }
-            >
-              <option value="">
-                No Assignee
-              </option>
-
-              {users
-                .filter(
-                  (person) =>
-                    person._id !== user?.id &&
-                    person._id !== user?._id
-                )
-                .map((person) => (
-                  <option
-                    key={person._id}
-                    value={person._id}
-                  >
-                    {getUserName(person)} (
-                    {person.email})
-                  </option>
-                ))}
-            </select>
-          </div>
 
           <label>Status</label>
 
