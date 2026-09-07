@@ -1,8 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-const ADMIN_API = "https://taskflow-odcc.onrender.com/api/admin";
+const ADMIN_API =
+  "https://taskflow-odcc.onrender.com/api/admin";
 
-function AdminDashboard({ user, token, onLogout }) {
+const USERS_API =
+  "https://taskflow-odcc.onrender.com/api/tasks/users/list";
+
+function AdminDashboard({
+  user,
+  token,
+  onLogout,
+  onSwitchToUser,
+}) {
   const [stats, setStats] = useState({
     totalUsers: 0,
     totalTasks: 0,
@@ -15,78 +24,183 @@ function AdminDashboard({ user, token, onLogout }) {
 
   const [users, setUsers] = useState([]);
   const [tasks, setTasks] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState("");
-  const [activeTab, setActiveTab] = useState("overview");
 
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [creatingTask, setCreatingTask] = useState(false);
+  const [loading, setLoading] =
+    useState(true);
 
-  const [taskForm, setTaskForm] = useState({
-    title: "",
-    description: "",
-    category: "Other",
-    priority: "Medium",
-    dueDate: "",
-    assignedTo: "",
-  });
+  const [message, setMessage] =
+    useState("");
 
-  const request = async (url, options = {}) => {
+  const [activeTab, setActiveTab] =
+    useState("overview");
+
+  const [
+    showCreateModal,
+    setShowCreateModal,
+  ] = useState(false);
+
+  const [
+    creatingTask,
+    setCreatingTask,
+  ] = useState(false);
+
+  const [taskForm, setTaskForm] =
+    useState({
+      title: "",
+      description: "",
+      category: "Other",
+      priority: "Medium",
+      dueDate: "",
+      assignedTo: "",
+    });
+
+  /* =========================
+     ROLE HELPERS
+  ========================= */
+
+  const getRoles = (person) => {
+    if (Array.isArray(person?.roles)) {
+      return person.roles;
+    }
+
+    if (person?.role) {
+      return [person.role];
+    }
+
+    return ["user"];
+  };
+
+  const isAdminUser = (person) => {
+    return getRoles(person).includes(
+      "admin"
+    );
+  };
+
+  /* =========================
+     REQUEST
+  ========================= */
+
+  const request = async (
+    url,
+    options = {}
+  ) => {
     const response = await fetch(url, {
       ...options,
+
       headers: {
-        "Content-Type": "application/json",
+        "Content-Type":
+          "application/json",
+
         Authorization: `Bearer ${token}`,
+
         ...(options.headers || {}),
       },
     });
 
-    const data = await response.json();
+    let data = {};
+
+    try {
+      data = await response.json();
+    } catch {
+      data = {};
+    }
 
     if (!response.ok) {
-      throw new Error(data.message || "Something went wrong");
+      throw new Error(
+        data.message ||
+          "Something went wrong"
+      );
     }
 
     return data;
   };
+
+  /* =========================
+     LOAD ADMIN DATA
+  ========================= */
 
   const loadAdminData = async () => {
     try {
       setLoading(true);
       setMessage("");
 
-      const [statsData, usersData, tasksData] = await Promise.all([
-        request(`${ADMIN_API}/stats`),
-        request(`${ADMIN_API}/users`),
-        request(`${ADMIN_API}/tasks`),
+      const [
+        statsData,
+        usersData,
+        tasksData,
+      ] = await Promise.all([
+        request(
+          `${ADMIN_API}/stats`
+        ),
+
+        request(
+          `${ADMIN_API}/users`
+        ),
+
+        request(
+          `${ADMIN_API}/tasks`
+        ),
       ]);
 
       setStats({
-        totalUsers: statsData.stats?.totalUsers || 0,
-        totalTasks: statsData.stats?.totalTasks || 0,
-        completedTasks: statsData.stats?.completedTasks || 0,
-        pendingTasks: statsData.stats?.pendingTasks || 0,
-        highPriorityTasks: statsData.stats?.highPriorityTasks || 0,
-        mediumPriorityTasks: statsData.stats?.mediumPriorityTasks || 0,
-        lowPriorityTasks: statsData.stats?.lowPriorityTasks || 0,
+        totalUsers:
+          statsData.stats
+            ?.totalUsers || 0,
+
+        totalTasks:
+          statsData.stats
+            ?.totalTasks || 0,
+
+        completedTasks:
+          statsData.stats
+            ?.completedTasks || 0,
+
+        pendingTasks:
+          statsData.stats
+            ?.pendingTasks || 0,
+
+        highPriorityTasks:
+          statsData.stats
+            ?.highPriorityTasks || 0,
+
+        mediumPriorityTasks:
+          statsData.stats
+            ?.mediumPriorityTasks || 0,
+
+        lowPriorityTasks:
+          statsData.stats
+            ?.lowPriorityTasks || 0,
       });
 
-      setUsers(
-        Array.isArray(usersData.users)
-          ? usersData.users
-          : []
-      );
+      /*
+       * Admin user-management list.
+       * This can contain admins because
+       * admin needs to see registered users.
+       */
+      const allUsers = Array.isArray(
+        usersData.users
+      )
+        ? usersData.users
+        : [];
+
+      setUsers(allUsers);
 
       setTasks(
-        Array.isArray(tasksData.tasks)
+        Array.isArray(
+          tasksData.tasks
+        )
           ? tasksData.tasks
           : []
       );
     } catch (error) {
-      console.error("Admin Dashboard Error:", error);
+      console.error(
+        "Admin Dashboard Error:",
+        error
+      );
 
       setMessage(
-        error.message || "Unable to load admin dashboard"
+        error.message ||
+          "Unable to load admin dashboard"
       );
     } finally {
       setLoading(false);
@@ -98,6 +212,45 @@ function AdminDashboard({ user, token, onLogout }) {
       loadAdminData();
     }
   }, [token]);
+
+  /* =========================
+     NORMAL USERS FOR ASSIGNMENT
+  ========================= */
+
+  const normalUsers = useMemo(() => {
+    return users.filter((person) => {
+      /*
+       * Admin cannot assign to:
+       * 1. Another admin
+       * 2. Himself
+       */
+
+      const currentUserId =
+        user?.id ||
+        user?._id;
+
+      const personId =
+        person?._id ||
+        person?.id;
+
+      if (
+        String(personId) ===
+        String(currentUserId)
+      ) {
+        return false;
+      }
+
+      if (isAdminUser(person)) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [users, user]);
+
+  /* =========================
+     USER HELPERS
+  ========================= */
 
   const getUserName = (person) => {
     if (!person) return null;
@@ -116,7 +269,10 @@ function AdminDashboard({ user, token, onLogout }) {
     return person.email || "";
   };
 
-  const getInitial = (person, fallback = "U") => {
+  const getInitial = (
+    person,
+    fallback = "U"
+  ) => {
     const name =
       person?.name ||
       person?.fullName ||
@@ -124,22 +280,45 @@ function AdminDashboard({ user, token, onLogout }) {
       person?.email;
 
     return (
-      name?.charAt(0)?.toUpperCase() ||
+      name
+        ?.charAt(0)
+        ?.toUpperCase() ||
       fallback
     );
+  };
+
+  /* =========================
+     MESSAGE
+  ========================= */
+
+  const showMessage = (
+    text
+  ) => {
+    setMessage(text);
+
+    setTimeout(() => {
+      setMessage("");
+    }, 3500);
   };
 
   /* =========================
      CREATE TASK FORM
   ========================= */
 
-  const handleTaskInput = (event) => {
-    const { name, value } = event.target;
+  const handleTaskInput = (
+    event
+  ) => {
+    const {
+      name,
+      value,
+    } = event.target;
 
-    setTaskForm((previous) => ({
-      ...previous,
-      [name]: value,
-    }));
+    setTaskForm(
+      (previous) => ({
+        ...previous,
+        [name]: value,
+      })
+    );
   };
 
   const resetTaskForm = () => {
@@ -160,45 +339,112 @@ function AdminDashboard({ user, token, onLogout }) {
     resetTaskForm();
   };
 
-  const createAdminTask = async (event) => {
+  /* =========================
+     CREATE ADMIN TASK
+  ========================= */
+
+  const createAdminTask = async (
+    event
+  ) => {
     event.preventDefault();
 
     if (!taskForm.title.trim()) {
-      setMessage("Please enter a task title.");
+      showMessage(
+        "Please enter a task title."
+      );
+
       return;
+    }
+
+    /*
+     * Extra frontend security:
+     * If selected user is admin,
+     * don't send the request.
+     */
+
+    if (
+      taskForm.assignedTo
+    ) {
+      const selectedUser =
+        normalUsers.find(
+          (person) =>
+            String(
+              person._id
+            ) ===
+            String(
+              taskForm.assignedTo
+            )
+        );
+
+      if (
+        !selectedUser ||
+        isAdminUser(
+          selectedUser
+        )
+      ) {
+        showMessage(
+          "You can only assign tasks to normal users."
+        );
+
+        return;
+      }
     }
 
     try {
       setCreatingTask(true);
       setMessage("");
 
-      const data = await request(`${ADMIN_API}/tasks`, {
-        method: "POST",
-        body: JSON.stringify({
-          title: taskForm.title.trim(),
-          description: taskForm.description.trim(),
-          category: taskForm.category,
-          priority: taskForm.priority,
-          dueDate: taskForm.dueDate || null,
-          assignedTo: taskForm.assignedTo || null,
-        }),
-      });
+      const data =
+        await request(
+          `${ADMIN_API}/tasks`,
+          {
+            method: "POST",
+
+            body: JSON.stringify({
+              title:
+                taskForm.title.trim(),
+
+              description:
+                taskForm.description.trim(),
+
+              category:
+                taskForm.category,
+
+              priority:
+                taskForm.priority,
+
+              dueDate:
+                taskForm.dueDate ||
+                null,
+
+              assignedTo:
+                taskForm.assignedTo ||
+                null,
+            }),
+          }
+        );
 
       setShowCreateModal(false);
+
       resetTaskForm();
 
-      setMessage(
-        data.message || "Task created successfully."
+      showMessage(
+        data.message ||
+          "Task created successfully."
       );
 
       await loadAdminData();
 
       setActiveTab("tasks");
     } catch (error) {
-      console.error("Create Admin Task Error:", error);
+      console.error(
+        "Create Admin Task Error:",
+        error
+      );
 
-      setMessage(
-        error.message || "Failed to create task."
+      showMessage(
+        error.message ||
+          "Failed to create task."
       );
     } finally {
       setCreatingTask(false);
@@ -209,23 +455,51 @@ function AdminDashboard({ user, token, onLogout }) {
      DELETE USER
   ========================= */
 
-  const deleteUser = async (id) => {
-    const confirmed = window.confirm(
-      "Are you sure you want to delete this user and their related tasks?"
-    );
+  const deleteUser = async (
+    id
+  ) => {
+    const confirmed =
+      window.confirm(
+        "Are you sure you want to delete this user and their related tasks?"
+      );
 
     if (!confirmed) return;
 
-    try {
-      await request(`${ADMIN_API}/users/${id}`, {
-        method: "DELETE",
-      });
+    /*
+     * Don't allow current admin
+     * to delete himself.
+     */
 
-      setMessage("User deleted successfully.");
+    if (
+      String(id) ===
+      String(
+        user?.id || user?._id
+      )
+    ) {
+      showMessage(
+        "You cannot delete your own admin account."
+      );
+
+      return;
+    }
+
+    try {
+      await request(
+        `${ADMIN_API}/users/${id}`,
+        {
+          method: "DELETE",
+        }
+      );
+
+      showMessage(
+        "User deleted successfully."
+      );
 
       await loadAdminData();
     } catch (error) {
-      setMessage(error.message);
+      showMessage(
+        error.message
+      );
     }
   };
 
@@ -233,30 +507,46 @@ function AdminDashboard({ user, token, onLogout }) {
      DELETE TASK
   ========================= */
 
-  const deleteTask = async (id) => {
-    const confirmed = window.confirm(
-      "Are you sure you want to delete this task?"
-    );
+  const deleteTask = async (
+    id
+  ) => {
+    const confirmed =
+      window.confirm(
+        "Are you sure you want to delete this task?"
+      );
 
     if (!confirmed) return;
 
     try {
-      await request(`${ADMIN_API}/tasks/${id}`, {
-        method: "DELETE",
-      });
+      await request(
+        `${ADMIN_API}/tasks/${id}`,
+        {
+          method: "DELETE",
+        }
+      );
 
-      setMessage("Task deleted successfully.");
+      showMessage(
+        "Task deleted successfully."
+      );
 
       await loadAdminData();
     } catch (error) {
-      setMessage(error.message);
+      showMessage(
+        error.message
+      );
     }
   };
+
+  /* =========================
+     COMPLETION
+  ========================= */
 
   const completionRate =
     stats.totalTasks > 0
       ? Math.round(
-          (stats.completedTasks / stats.totalTasks) * 100
+          (stats.completedTasks /
+            stats.totalTasks) *
+            100
         )
       : 0;
 
@@ -268,18 +558,28 @@ function AdminDashboard({ user, token, onLogout }) {
 
       <nav className="admin-navbar">
         <div className="admin-brand">
-          <div className="admin-logo">T</div>
+          <div className="admin-logo">
+            T
+          </div>
 
           <div>
-            <h2>TaskFlow</h2>
-            <span>Admin Panel</span>
+            <h2>
+              TaskFlow
+            </h2>
+
+            <span>
+              Admin Panel
+            </span>
           </div>
         </div>
 
         <div className="admin-user-area">
           <div className="admin-profile">
             <div className="admin-avatar">
-              {getInitial(user, "A")}
+              {getInitial(
+                user,
+                "A"
+              )}
             </div>
 
             <div>
@@ -289,9 +589,29 @@ function AdminDashboard({ user, token, onLogout }) {
                   "Admin"}
               </strong>
 
-              <small>{user?.email || ""}</small>
+              <small>
+                {user?.email || ""}
+              </small>
             </div>
           </div>
+
+          {/* =========================
+              USER MODE
+          ========================= */}
+
+          <button
+            className="admin-user-mode-btn"
+            onClick={
+              onSwitchToUser
+            }
+            title="Switch to User Mode"
+          >
+            👤 User Mode
+          </button>
+
+          {/* =========================
+              LOGOUT
+          ========================= */}
 
           <button
             className="admin-logout-btn"
@@ -313,29 +633,41 @@ function AdminDashboard({ user, token, onLogout }) {
               ADMINISTRATOR
             </p>
 
-            <h1>Admin Dashboard</h1>
+            <h1>
+              Admin Dashboard
+            </h1>
 
             <p>
-              Manage users, tasks and monitor overall
+              Manage users, tasks and
+              monitor overall
               TaskFlow activity.
             </p>
           </div>
 
           <button
             className="admin-refresh-btn"
-            onClick={loadAdminData}
+            onClick={
+              loadAdminData
+            }
             disabled={loading}
           >
-            ↻ {loading ? "Loading..." : "Refresh"}
+            ↻{" "}
+            {loading
+              ? "Loading..."
+              : "Refresh"}
           </button>
         </section>
 
         {message && (
           <div className="admin-message">
-            <span>{message}</span>
+            <span>
+              {message}
+            </span>
 
             <button
-              onClick={() => setMessage("")}
+              onClick={() =>
+                setMessage("")
+              }
               aria-label="Close message"
             >
               ×
@@ -350,12 +682,15 @@ function AdminDashboard({ user, token, onLogout }) {
         <div className="admin-tabs">
           <button
             className={
-              activeTab === "overview"
+              activeTab ===
+              "overview"
                 ? "active"
                 : ""
             }
             onClick={() =>
-              setActiveTab("overview")
+              setActiveTab(
+                "overview"
+              )
             }
           >
             📊 Overview
@@ -363,12 +698,15 @@ function AdminDashboard({ user, token, onLogout }) {
 
           <button
             className={
-              activeTab === "users"
+              activeTab ===
+              "users"
                 ? "active"
                 : ""
             }
             onClick={() =>
-              setActiveTab("users")
+              setActiveTab(
+                "users"
+              )
             }
           >
             👥 Users
@@ -376,12 +714,15 @@ function AdminDashboard({ user, token, onLogout }) {
 
           <button
             className={
-              activeTab === "tasks"
+              activeTab ===
+              "tasks"
                 ? "active"
                 : ""
             }
             onClick={() =>
-              setActiveTab("tasks")
+              setActiveTab(
+                "tasks"
+              )
             }
           >
             📋 Tasks
@@ -402,7 +743,8 @@ function AdminDashboard({ user, token, onLogout }) {
                 OVERVIEW
             ========================= */}
 
-            {activeTab === "overview" && (
+            {activeTab ===
+              "overview" && (
               <>
                 <section className="admin-stats-grid">
                   <div className="admin-stat-card">
@@ -411,10 +753,14 @@ function AdminDashboard({ user, token, onLogout }) {
                     </div>
 
                     <div>
-                      <span>Total Users</span>
+                      <span>
+                        Total Users
+                      </span>
 
                       <strong>
-                        {stats.totalUsers}
+                        {
+                          stats.totalUsers
+                        }
                       </strong>
                     </div>
                   </div>
@@ -425,10 +771,14 @@ function AdminDashboard({ user, token, onLogout }) {
                     </div>
 
                     <div>
-                      <span>Total Tasks</span>
+                      <span>
+                        Total Tasks
+                      </span>
 
                       <strong>
-                        {stats.totalTasks}
+                        {
+                          stats.totalTasks
+                        }
                       </strong>
                     </div>
                   </div>
@@ -439,10 +789,14 @@ function AdminDashboard({ user, token, onLogout }) {
                     </div>
 
                     <div>
-                      <span>Completed</span>
+                      <span>
+                        Completed
+                      </span>
 
                       <strong>
-                        {stats.completedTasks}
+                        {
+                          stats.completedTasks
+                        }
                       </strong>
                     </div>
                   </div>
@@ -453,10 +807,14 @@ function AdminDashboard({ user, token, onLogout }) {
                     </div>
 
                     <div>
-                      <span>Pending</span>
+                      <span>
+                        Pending
+                      </span>
 
                       <strong>
-                        {stats.pendingTasks}
+                        {
+                          stats.pendingTasks
+                        }
                       </strong>
                     </div>
                   </div>
@@ -471,13 +829,17 @@ function AdminDashboard({ user, token, onLogout }) {
                         </h2>
 
                         <p>
-                          Overall task completion
+                          Overall task
+                          completion
                           rate
                         </p>
                       </div>
 
                       <strong className="completion-number">
-                        {completionRate}%
+                        {
+                          completionRate
+                        }
+                        %
                       </strong>
                     </div>
 
@@ -494,14 +856,18 @@ function AdminDashboard({ user, token, onLogout }) {
                       <span>
                         Completed:{" "}
                         <strong>
-                          {stats.completedTasks}
+                          {
+                            stats.completedTasks
+                          }
                         </strong>
                       </span>
 
                       <span>
                         Pending:{" "}
                         <strong>
-                          {stats.pendingTasks}
+                          {
+                            stats.pendingTasks
+                          }
                         </strong>
                       </span>
                     </div>
@@ -511,11 +877,14 @@ function AdminDashboard({ user, token, onLogout }) {
                     <div className="panel-heading">
                       <div>
                         <h2>
-                          Priority Statistics
+                          Priority
+                          Statistics
                         </h2>
 
                         <p>
-                          Tasks by priority level
+                          Tasks by
+                          priority
+                          level
                         </p>
                       </div>
                     </div>
@@ -528,7 +897,9 @@ function AdminDashboard({ user, token, onLogout }) {
                         </span>
 
                         <strong>
-                          {stats.highPriorityTasks}
+                          {
+                            stats.highPriorityTasks
+                          }
                         </strong>
                       </div>
 
@@ -539,7 +910,9 @@ function AdminDashboard({ user, token, onLogout }) {
                         </span>
 
                         <strong>
-                          {stats.mediumPriorityTasks}
+                          {
+                            stats.mediumPriorityTasks
+                          }
                         </strong>
                       </div>
 
@@ -550,7 +923,9 @@ function AdminDashboard({ user, token, onLogout }) {
                         </span>
 
                         <strong>
-                          {stats.lowPriorityTasks}
+                          {
+                            stats.lowPriorityTasks
+                          }
                         </strong>
                       </div>
                     </div>
@@ -560,10 +935,13 @@ function AdminDashboard({ user, token, onLogout }) {
                 <section className="admin-panel recent-panel">
                   <div className="panel-heading">
                     <div>
-                      <h2>Recent Tasks</h2>
+                      <h2>
+                        Recent Tasks
+                      </h2>
 
                       <p>
-                        Latest tasks created in
+                        Latest tasks
+                        created in
                         TaskFlow
                       </p>
                     </div>
@@ -571,400 +949,63 @@ function AdminDashboard({ user, token, onLogout }) {
                     <button
                       className="text-btn"
                       onClick={() =>
-                        setActiveTab("tasks")
+                        setActiveTab(
+                          "tasks"
+                        )
                       }
                     >
                       View All →
                     </button>
                   </div>
 
-                  {tasks.length === 0 ? (
+                  {tasks.length ===
+                  0 ? (
                     <div className="empty-admin">
-                      <span>📋</span>
+                      <span>
+                        📋
+                      </span>
 
                       <p>
-                        No tasks available.
+                        No tasks
+                        available.
                       </p>
                     </div>
                   ) : (
                     <div className="recent-task-list">
                       {tasks
-                        .slice(0, 5)
-                        .map((task) => (
-                          <div
-                            className="recent-task"
-                            key={task._id}
-                          >
-                            <div>
-                              <strong>
-                                {task.title ||
-                                  "Untitled Task"}
-                              </strong>
+                        .slice(
+                          0,
+                          5
+                        )
+                        .map(
+                          (
+                            task
+                          ) => (
+                            <div
+                              className="recent-task"
+                              key={
+                                task._id
+                              }
+                            >
+                              <div>
+                                <strong>
+                                  {task.title ||
+                                    "Untitled Task"}
+                                </strong>
 
-                              <small>
-                                Created by{" "}
-                                {getUserName(
-                                  task.user
-                                ) ||
-                                  getUserEmail(
+                                <small>
+                                  Created by{" "}
+                                  {getUserName(
                                     task.user
                                   ) ||
-                                  "Deleted User"}
-                              </small>
-                            </div>
+                                    getUserEmail(
+                                      task.user
+                                    ) ||
+                                    "Deleted User"}
+                                </small>
+                              </div>
 
-                            <div className="recent-task-right">
-                              <span
-                                className={`status-badge ${
-                                  task.completed
-                                    ? "completed"
-                                    : "pending"
-                                }`}
-                              >
-                                {task.completed
-                                  ? "Completed"
-                                  : "Pending"}
-                              </span>
-
-                              <span
-                                className={`priority-badge ${String(
-                                  task.priority ||
-                                    "Medium"
-                                ).toLowerCase()}`}
-                              >
-                                {task.priority ||
-                                  "Medium"}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                    </div>
-                  )}
-                </section>
-              </>
-            )}
-
-            {/* =========================
-                USERS
-            ========================= */}
-
-            {activeTab === "users" && (
-              <section className="admin-panel">
-                <div className="panel-heading">
-                  <div>
-                    <h2>All Users</h2>
-
-                    <p>
-                      Manage registered TaskFlow
-                      users.
-                    </p>
-                  </div>
-
-                  <span className="count-badge">
-                    {users.length} Users
-                  </span>
-                </div>
-
-                {users.length === 0 ? (
-                  <div className="empty-admin">
-                    <span>👥</span>
-
-                    <p>No users found.</p>
-                  </div>
-                ) : (
-                  <div className="admin-table-wrapper">
-                    <table className="admin-table">
-                      <thead>
-                        <tr>
-                          <th>User</th>
-                          <th>Email</th>
-                          <th>Role</th>
-                          <th>Joined</th>
-                          <th>Action</th>
-                        </tr>
-                      </thead>
-
-                      <tbody>
-                        {users.map((person) => {
-                          const isCurrentAdmin =
-                            String(
-                              person._id
-                            ) ===
-                            String(user?.id);
-
-                          const personName =
-                            getUserName(person);
-
-                          const personEmail =
-                            getUserEmail(person);
-
-                          return (
-                            <tr
-                              key={person._id}
-                            >
-                              <td>
-                                <div className="table-user">
-                                  <div className="table-avatar">
-                                    {getInitial(
-                                      person,
-                                      "U"
-                                    )}
-                                  </div>
-
-                                  <div className="table-user-info">
-                                    <strong>
-                                      {personName ||
-                                        personEmail ||
-                                        "User"}
-                                    </strong>
-
-                                    {personName &&
-                                      personEmail && (
-                                        <small>
-                                          {
-                                            personEmail
-                                          }
-                                        </small>
-                                      )}
-                                  </div>
-                                </div>
-                              </td>
-
-                              <td>
-                                {personEmail ||
-                                  "—"}
-                              </td>
-
-                              <td>
-                                <span
-                                  className={`role-badge ${
-                                    person.role ===
-                                    "admin"
-                                      ? "admin-role"
-                                      : "user-role"
-                                  }`}
-                                >
-                                  {person.role ||
-                                    "user"}
-                                </span>
-                              </td>
-
-                              <td>
-                                {person.createdAt
-                                  ? new Date(
-                                      person.createdAt
-                                    ).toLocaleDateString()
-                                  : "—"}
-                              </td>
-
-                              <td>
-                                {isCurrentAdmin ? (
-                                  <span className="self-label">
-                                    Current Admin
-                                  </span>
-                                ) : (
-                                  <button
-                                    className="delete-btn"
-                                    onClick={() =>
-                                      deleteUser(
-                                        person._id
-                                      )
-                                    }
-                                  >
-                                    Delete
-                                  </button>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </section>
-            )}
-
-            {/* =========================
-                TASKS
-            ========================= */}
-
-            {activeTab === "tasks" && (
-              <section className="admin-panel">
-                <div className="panel-heading">
-                  <div>
-                    <h2>All Tasks</h2>
-
-                    <p>
-                      View and manage every task
-                      in TaskFlow.
-                    </p>
-                  </div>
-
-                  <div className="task-header-actions">
-                    <span className="count-badge">
-                      {tasks.length} Tasks
-                    </span>
-
-                    <button
-                      className="admin-create-task-btn"
-                      onClick={() =>
-                        setShowCreateModal(true)
-                      }
-                    >
-                      + Create & Assign Task
-                    </button>
-                  </div>
-                </div>
-
-                {tasks.length === 0 ? (
-                  <div className="empty-admin">
-                    <span>📋</span>
-
-                    <p>No tasks found.</p>
-
-                    <button
-                      className="admin-create-task-btn"
-                      onClick={() =>
-                        setShowCreateModal(true)
-                      }
-                    >
-                      + Create First Task
-                    </button>
-                  </div>
-                ) : (
-                  <div className="admin-table-wrapper">
-                    <table className="admin-table">
-                      <thead>
-                        <tr>
-                          <th>Task</th>
-                          <th>Created By</th>
-                          <th>Assigned To</th>
-                          <th>Priority</th>
-                          <th>Status</th>
-                          <th>Action</th>
-                        </tr>
-                      </thead>
-
-                      <tbody>
-                        {tasks.map((task) => {
-                          const createdBy =
-                            task.user;
-
-                          const assignedTo =
-                            task.assignedTo;
-
-                          const createdByName =
-                            getUserName(
-                              createdBy
-                            );
-
-                          const createdByEmail =
-                            getUserEmail(
-                              createdBy
-                            );
-
-                          const assignedName =
-                            getUserName(
-                              assignedTo
-                            );
-
-                          const assignedEmail =
-                            getUserEmail(
-                              assignedTo
-                            );
-
-                          return (
-                            <tr
-                              key={task._id}
-                            >
-                              <td>
-                                <div className="table-task">
-                                  <strong>
-                                    {task.title ||
-                                      "Untitled Task"}
-                                  </strong>
-
-                                  <span className="task-category">
-                                    {task.category ||
-                                      "Other"}
-                                  </span>
-                                </div>
-                              </td>
-
-                              <td>
-                                <div className="task-person">
-                                  {createdByName ? (
-                                    <>
-                                      <strong>
-                                        {
-                                          createdByName
-                                        }
-                                      </strong>
-
-                                      {createdByEmail && (
-                                        <small>
-                                          {
-                                            createdByEmail
-                                          }
-                                        </small>
-                                      )}
-                                    </>
-                                  ) : (
-                                    <strong>
-                                      {createdByEmail ||
-                                        "Deleted User"}
-                                    </strong>
-                                  )}
-                                </div>
-                              </td>
-
-                              <td>
-                                {assignedTo ? (
-                                  <div className="task-person">
-                                    {assignedName ? (
-                                      <>
-                                        <strong>
-                                          {
-                                            assignedName
-                                          }
-                                        </strong>
-
-                                        {assignedEmail && (
-                                          <small>
-                                            {
-                                              assignedEmail
-                                            }
-                                          </small>
-                                        )}
-                                      </>
-                                    ) : (
-                                      <strong>
-                                        {assignedEmail ||
-                                          "User"}
-                                      </strong>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <span className="no-assignee">
-                                    No Assignee
-                                  </span>
-                                )}
-                              </td>
-
-                              <td>
-                                <span
-                                  className={`priority-badge ${String(
-                                    task.priority ||
-                                      "Medium"
-                                  ).toLowerCase()}`}
-                                >
-                                  {task.priority ||
-                                    "Medium"}
-                                </span>
-                              </td>
-
-                              <td>
+                              <div className="recent-task-right">
                                 <span
                                   className={`status-badge ${
                                     task.completed
@@ -976,23 +1017,460 @@ function AdminDashboard({ user, token, onLogout }) {
                                     ? "Completed"
                                     : "Pending"}
                                 </span>
-                              </td>
 
-                              <td>
-                                <button
-                                  className="delete-btn"
-                                  onClick={() =>
-                                    deleteTask(
-                                      task._id
-                                    )
-                                  }
+                                <span
+                                  className={`priority-badge ${String(
+                                    task.priority ||
+                                      "Medium"
+                                  ).toLowerCase()}`}
                                 >
-                                  Delete
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
+                                  {task.priority ||
+                                    "Medium"}
+                                </span>
+                              </div>
+                            </div>
+                          )
+                        )}
+                    </div>
+                  )}
+                </section>
+              </>
+            )}
+
+            {/* =========================
+                USERS
+            ========================= */}
+
+            {activeTab ===
+              "users" && (
+              <section className="admin-panel">
+                <div className="panel-heading">
+                  <div>
+                    <h2>
+                      All Users
+                    </h2>
+
+                    <p>
+                      Manage registered
+                      TaskFlow users.
+                    </p>
+                  </div>
+
+                  <span className="count-badge">
+                    {users.length}{" "}
+                    Users
+                  </span>
+                </div>
+
+                {users.length ===
+                0 ? (
+                  <div className="empty-admin">
+                    <span>
+                      👥
+                    </span>
+
+                    <p>
+                      No users found.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="admin-table-wrapper">
+                    <table className="admin-table">
+                      <thead>
+                        <tr>
+                          <th>
+                            User
+                          </th>
+
+                          <th>
+                            Email
+                          </th>
+
+                          <th>
+                            Role
+                          </th>
+
+                          <th>
+                            Joined
+                          </th>
+
+                          <th>
+                            Action
+                          </th>
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        {users.map(
+                          (
+                            person
+                          ) => {
+                            const isCurrentAdmin =
+                              String(
+                                person._id
+                              ) ===
+                                String(
+                                  user?.id
+                                ) ||
+                              String(
+                                person._id
+                              ) ===
+                                String(
+                                  user?._id
+                                );
+
+                            const personName =
+                              getUserName(
+                                person
+                              );
+
+                            const personEmail =
+                              getUserEmail(
+                                person
+                              );
+
+                            const personIsAdmin =
+                              isAdminUser(
+                                person
+                              );
+
+                            return (
+                              <tr
+                                key={
+                                  person._id
+                                }
+                              >
+                                <td>
+                                  <div className="table-user">
+                                    <div className="table-avatar">
+                                      {getInitial(
+                                        person,
+                                        "U"
+                                      )}
+                                    </div>
+
+                                    <div className="table-user-info">
+                                      <strong>
+                                        {personName ||
+                                          personEmail ||
+                                          "User"}
+                                      </strong>
+
+                                      {personName &&
+                                        personEmail && (
+                                          <small>
+                                            {
+                                              personEmail
+                                            }
+                                          </small>
+                                        )}
+                                    </div>
+                                  </div>
+                                </td>
+
+                                <td>
+                                  {personEmail ||
+                                    "—"}
+                                </td>
+
+                                <td>
+                                  <span
+                                    className={`role-badge ${
+                                      personIsAdmin
+                                        ? "admin-role"
+                                        : "user-role"
+                                    }`}
+                                  >
+                                    {personIsAdmin
+                                      ? "Admin"
+                                      : "User"}
+                                  </span>
+                                </td>
+
+                                <td>
+                                  {person.createdAt
+                                    ? new Date(
+                                        person.createdAt
+                                      ).toLocaleDateString()
+                                    : "—"}
+                                </td>
+
+                                <td>
+                                  {isCurrentAdmin ? (
+                                    <span className="self-label">
+                                      Current Admin
+                                    </span>
+                                  ) : (
+                                    <button
+                                      className="delete-btn"
+                                      onClick={() =>
+                                        deleteUser(
+                                          person._id
+                                        )
+                                      }
+                                    >
+                                      Delete
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          }
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* =========================
+                TASKS
+            ========================= */}
+
+            {activeTab ===
+              "tasks" && (
+              <section className="admin-panel">
+                <div className="panel-heading">
+                  <div>
+                    <h2>
+                      All Tasks
+                    </h2>
+
+                    <p>
+                      View and manage
+                      every task in
+                      TaskFlow.
+                    </p>
+                  </div>
+
+                  <div className="task-header-actions">
+                    <span className="count-badge">
+                      {tasks.length}{" "}
+                      Tasks
+                    </span>
+
+                    <button
+                      className="admin-create-task-btn"
+                      onClick={() =>
+                        setShowCreateModal(
+                          true
+                        )
+                      }
+                    >
+                      + Create & Assign
+                      Task
+                    </button>
+                  </div>
+                </div>
+
+                {tasks.length ===
+                0 ? (
+                  <div className="empty-admin">
+                    <span>
+                      📋
+                    </span>
+
+                    <p>
+                      No tasks found.
+                    </p>
+
+                    <button
+                      className="admin-create-task-btn"
+                      onClick={() =>
+                        setShowCreateModal(
+                          true
+                        )
+                      }
+                    >
+                      + Create First
+                      Task
+                    </button>
+                  </div>
+                ) : (
+                  <div className="admin-table-wrapper">
+                    <table className="admin-table">
+                      <thead>
+                        <tr>
+                          <th>
+                            Task
+                          </th>
+
+                          <th>
+                            Created By
+                          </th>
+
+                          <th>
+                            Assigned To
+                          </th>
+
+                          <th>
+                            Priority
+                          </th>
+
+                          <th>
+                            Status
+                          </th>
+
+                          <th>
+                            Action
+                          </th>
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        {tasks.map(
+                          (
+                            task
+                          ) => {
+                            const createdBy =
+                              task.user;
+
+                            const assignedTo =
+                              task.assignedTo;
+
+                            const createdByName =
+                              getUserName(
+                                createdBy
+                              );
+
+                            const createdByEmail =
+                              getUserEmail(
+                                createdBy
+                              );
+
+                            const assignedName =
+                              getUserName(
+                                assignedTo
+                              );
+
+                            const assignedEmail =
+                              getUserEmail(
+                                assignedTo
+                              );
+
+                            return (
+                              <tr
+                                key={
+                                  task._id
+                                }
+                              >
+                                <td>
+                                  <div className="table-task">
+                                    <strong>
+                                      {task.title ||
+                                        "Untitled Task"}
+                                    </strong>
+
+                                    <span className="task-category">
+                                      {task.category ||
+                                        "Other"}
+                                    </span>
+                                  </div>
+                                </td>
+
+                                <td>
+                                  <div className="task-person">
+                                    {createdByName ? (
+                                      <>
+                                        <strong>
+                                          {
+                                            createdByName
+                                          }
+                                        </strong>
+
+                                        {createdByEmail && (
+                                          <small>
+                                            {
+                                              createdByEmail
+                                            }
+                                          </small>
+                                        )}
+                                      </>
+                                    ) : (
+                                      <strong>
+                                        {createdByEmail ||
+                                          "Deleted User"}
+                                      </strong>
+                                    )}
+                                  </div>
+                                </td>
+
+                                <td>
+                                  {assignedTo ? (
+                                    <div className="task-person">
+                                      {assignedName ? (
+                                        <>
+                                          <strong>
+                                            {
+                                              assignedName
+                                            }
+                                          </strong>
+
+                                          {assignedEmail && (
+                                            <small>
+                                              {
+                                                assignedEmail
+                                              }
+                                            </small>
+                                          )}
+                                        </>
+                                      ) : (
+                                        <strong>
+                                          {assignedEmail ||
+                                            "User"}
+                                        </strong>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="no-assignee">
+                                      No Assignee
+                                    </span>
+                                  )}
+                                </td>
+
+                                <td>
+                                  <span
+                                    className={`priority-badge ${String(
+                                      task.priority ||
+                                        "Medium"
+                                    ).toLowerCase()}`}
+                                  >
+                                    {task.priority ||
+                                      "Medium"}
+                                  </span>
+                                </td>
+
+                                <td>
+                                  <span
+                                    className={`status-badge ${
+                                      task.completed
+                                        ? "completed"
+                                        : "pending"
+                                    }`}
+                                  >
+                                    {task.completed
+                                      ? "Completed"
+                                      : "Pending"}
+                                  </span>
+                                </td>
+
+                                <td>
+                                  <button
+                                    className="delete-btn"
+                                    onClick={() =>
+                                      deleteTask(
+                                        task._id
+                                      )
+                                    }
+                                  >
+                                    Delete
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          }
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -1010,9 +1488,12 @@ function AdminDashboard({ user, token, onLogout }) {
       {showCreateModal && (
         <div
           className="admin-modal-overlay"
-          onMouseDown={(event) => {
+          onMouseDown={(
+            event
+          ) => {
             if (
-              event.target === event.currentTarget &&
+              event.target ===
+                event.currentTarget &&
               !creatingTask
             ) {
               closeCreateModal();
@@ -1026,18 +1507,27 @@ function AdminDashboard({ user, token, onLogout }) {
                   ADMIN TASK
                 </p>
 
-                <h2>Create & Assign Task</h2>
+                <h2>
+                  Create & Assign
+                  Task
+                </h2>
 
                 <p>
-                  Create a task and assign it to a
-                  TaskFlow user.
+                  Create a task and
+                  assign it to a
+                  normal TaskFlow
+                  user.
                 </p>
               </div>
 
               <button
                 className="admin-modal-close"
-                onClick={closeCreateModal}
-                disabled={creatingTask}
+                onClick={
+                  closeCreateModal
+                }
+                disabled={
+                  creatingTask
+                }
               >
                 ×
               </button>
@@ -1045,44 +1535,69 @@ function AdminDashboard({ user, token, onLogout }) {
 
             <form
               className="admin-task-form"
-              onSubmit={createAdminTask}
+              onSubmit={
+                createAdminTask
+              }
             >
+              {/* TITLE */}
+
               <div className="admin-form-group">
                 <label>
-                  Task Title <span>*</span>
+                  Task Title{" "}
+                  <span>*</span>
                 </label>
 
                 <input
                   type="text"
                   name="title"
-                  value={taskForm.title}
-                  onChange={handleTaskInput}
+                  value={
+                    taskForm.title
+                  }
+                  onChange={
+                    handleTaskInput
+                  }
                   placeholder="Enter task title"
                   required
                   autoFocus
                 />
               </div>
 
+              {/* DESCRIPTION */}
+
               <div className="admin-form-group">
-                <label>Description</label>
+                <label>
+                  Description
+                </label>
 
                 <textarea
                   name="description"
-                  value={taskForm.description}
-                  onChange={handleTaskInput}
+                  value={
+                    taskForm.description
+                  }
+                  onChange={
+                    handleTaskInput
+                  }
                   placeholder="Enter task description"
                   rows="4"
                 ></textarea>
               </div>
 
+              {/* CATEGORY + PRIORITY */}
+
               <div className="admin-form-row">
                 <div className="admin-form-group">
-                  <label>Category</label>
+                  <label>
+                    Category
+                  </label>
 
                   <select
                     name="category"
-                    value={taskForm.category}
-                    onChange={handleTaskInput}
+                    value={
+                      taskForm.category
+                    }
+                    onChange={
+                      handleTaskInput
+                    }
                   >
                     <option value="Work">
                       Work
@@ -1107,12 +1622,18 @@ function AdminDashboard({ user, token, onLogout }) {
                 </div>
 
                 <div className="admin-form-group">
-                  <label>Priority</label>
+                  <label>
+                    Priority
+                  </label>
 
                   <select
                     name="priority"
-                    value={taskForm.priority}
-                    onChange={handleTaskInput}
+                    value={
+                      taskForm.priority
+                    }
+                    onChange={
+                      handleTaskInput
+                    }
                   >
                     <option value="Low">
                       Low
@@ -1129,15 +1650,23 @@ function AdminDashboard({ user, token, onLogout }) {
                 </div>
               </div>
 
+              {/* DUE DATE + ASSIGN */}
+
               <div className="admin-form-row">
                 <div className="admin-form-group">
-                  <label>Due Date</label>
+                  <label>
+                    Due Date
+                  </label>
 
                   <input
                     type="date"
                     name="dueDate"
-                    value={taskForm.dueDate}
-                    onChange={handleTaskInput}
+                    value={
+                      taskForm.dueDate
+                    }
+                    onChange={
+                      handleTaskInput
+                    }
                   />
                 </div>
 
@@ -1148,43 +1677,82 @@ function AdminDashboard({ user, token, onLogout }) {
 
                   <select
                     name="assignedTo"
-                    value={taskForm.assignedTo}
-                    onChange={handleTaskInput}
+                    value={
+                      taskForm.assignedTo
+                    }
+                    onChange={
+                      handleTaskInput
+                    }
                   >
                     <option value="">
                       No Assignee
                     </option>
 
-                    {users.map((person) => (
+                    {normalUsers.length ===
+                    0 ? (
                       <option
-                        key={person._id}
-                        value={person._id}
+                        value=""
+                        disabled
                       >
-                        {person.name
-                          ? `${person.name} — ${person.email}`
-                          : person.email}
+                        No normal users
+                        available
                       </option>
-                    ))}
+                    ) : (
+                      normalUsers.map(
+                        (
+                          person
+                        ) => (
+                          <option
+                            key={
+                              person._id
+                            }
+                            value={
+                              person._id
+                            }
+                          >
+                            {person.name
+                              ? `${person.name} — ${person.email}`
+                              : person.email}
+                          </option>
+                        )
+                      )
+                    )}
                   </select>
                 </div>
               </div>
 
+              {/* ASSIGNMENT INFO */}
+
               <div className="admin-assignment-note">
-                <span>💡</span>
+                <span>
+                  💡
+                </span>
 
                 <p>
-                  The task will be created under your
-                  admin account and assigned to the
-                  selected user.
+                  Only normal
+                  User / Student
+                  accounts are
+                  available for
+                  task assignment.
+                  Admin accounts
+                  cannot receive
+                  tasks from this
+                  panel.
                 </p>
               </div>
+
+              {/* ACTIONS */}
 
               <div className="admin-modal-actions">
                 <button
                   type="button"
                   className="admin-cancel-btn"
-                  onClick={closeCreateModal}
-                  disabled={creatingTask}
+                  onClick={
+                    closeCreateModal
+                  }
+                  disabled={
+                    creatingTask
+                  }
                 >
                   Cancel
                 </button>
@@ -1192,7 +1760,9 @@ function AdminDashboard({ user, token, onLogout }) {
                 <button
                   type="submit"
                   className="admin-submit-btn"
-                  disabled={creatingTask}
+                  disabled={
+                    creatingTask
+                  }
                 >
                   {creatingTask
                     ? "Creating..."
@@ -1204,10 +1774,16 @@ function AdminDashboard({ user, token, onLogout }) {
         </div>
       )}
 
+      {/* =========================
+          FOOTER
+      ========================= */}
+
       <footer className="admin-footer">
         <p>
-          © {new Date().getFullYear()} TaskFlow.
-          Admin Control Panel.
+          ©{" "}
+          {new Date().getFullYear()}{" "}
+          TaskFlow. Admin Control
+          Panel.
         </p>
       </footer>
     </div>

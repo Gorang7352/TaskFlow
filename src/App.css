@@ -3588,4 +3588,66 @@ button:disabled {
     max-height: calc(100vh - 20px);
     border-radius: 14px;
   }
+}/* =========================
+   ADMIN / USER MODE BUTTONS
+========================= */
+
+.admin-mode-btn,
+.admin-user-mode-btn {
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  color: #4338ca;
+  padding: 9px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: 0.2s ease;
+  white-space: nowrap;
+}
+
+.admin-mode-btn:hover,
+.admin-user-mode-btn:hover {
+  background: #e0e7ff;
+  transform: translateY(-1px);
+}
+
+.admin-user-mode-btn {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #15803d;
+}
+
+.admin-user-mode-btn:hover {
+  background: #dcfce7;
+}
+
+/* Admin header responsive */
+
+@media (max-width: 900px) {
+  .admin-user-area {
+    gap: 8px;
+  }
+
+  .admin-mode-btn,
+  .admin-user-mode-btn {
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 700px) {
+  .admin-profile > div:last-child {
+    display: none;
+  }
+
+  .admin-mode-btn,
+  .admin-user-mode-btn {
+    font-size: 0;
+  }
+
+  .admin-mode-btn::first-letter,
+  .admin-user-mode-btn::first-letter {
+    font-size: 16px;
+  }
 }

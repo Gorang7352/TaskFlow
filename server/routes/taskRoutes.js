@@ -3,22 +3,11 @@ const mongoose = require("mongoose");
 
 const Task = require("../models/Task");
 const User = require("../models/User");
+const authMiddleware = require("../middleware/authMiddleware");
 
 const router = express.Router();
 
-const CATEGORIES = [
-  "Work",
-  "Study",
-  "Personal",
-  "Shopping",
-  "Other",
-];
-
-const PRIORITIES = [
-  "Low",
-  "Medium",
-  "High",
-];
+router.use(authMiddleware);
 
 // ================= GET TASKS =================
 
@@ -34,71 +23,212 @@ router.get("/", async (req, res) => {
     })
       .populate(
         "user",
-        "name email role"
+        "name email roles role"
       )
       .populate(
         "assignedTo",
-        "name email role"
+        "name email roles role"
       )
-      .sort({
-        createdAt: -1,
-      });
+      .sort({ createdAt: -1 });
 
-    res.json(tasks);
+    return res.json({
+      success: true,
+      tasks,
+    });
   } catch (error) {
     console.error(
       "Get Tasks Error:",
       error
     );
 
-    res.status(500).json({
-      message:
-        "Failed to fetch tasks",
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch tasks",
     });
   }
 });
 
-// ================= GET USERS =================
-// Normal users are allowed in assignment list.
-// Admins are intentionally excluded.
+// ================= GET NORMAL USERS =================
+// Used by Admin to assign tasks.
+//
+// Admin users are intentionally excluded.
 
-router.get(
-  "/users/list",
-  async (req, res) => {
-    try {
-      const users =
-        await User.find({
-          _id: {
-            $ne: req.user.userId,
+router.get("/users/list", async (req, res) => {
+  try {
+    const currentUserId = req.user.userId;
+
+    const users = await User.find({
+      _id: {
+        $ne: currentUserId,
+      },
+
+      $or: [
+        {
+          roles: {
+            $nin: ["admin"],
           },
+        },
+        {
+          roles: {
+            $exists: false,
+          },
+        },
+        {
           role: "user",
-        })
-          .select(
-            "_id name email role"
-          )
-          .sort({
-            name: 1,
-          });
+        },
+      ],
+    })
+      .select("_id name email roles role")
+      .sort({ name: 1 });
 
-      res.json(users);
-    } catch (error) {
-      console.error(
-        "Get Users Error:",
-        error
-      );
+    // Extra server-side protection:
+    // Never return an admin account in assignment list.
+    const normalUsers = users.filter((user) => {
+      const roles = Array.isArray(user.roles)
+        ? user.roles
+        : user.role
+        ? [user.role]
+        : ["user"];
 
-      res.status(500).json({
-        message:
-          "Failed to fetch users",
-      });
-    }
+      return !roles.includes("admin");
+    });
+
+    return res.json({
+      success: true,
+      users: normalUsers,
+    });
+  } catch (error) {
+    console.error(
+      "Get Users Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch users",
+    });
   }
-);
+});
 
-// ================= CREATE TASK =================
+// ================= CREATE NORMAL USER TASK =================
 
 router.post("/", async (req, res) => {
   try {
+    const {
+      title,
+      description,
+      category,
+      priority,
+      dueDate,
+    } = req.body;
+
+    if (!title || !title.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Task title is required",
+      });
+    }
+
+    // IMPORTANT:
+    // Normal users cannot assign tasks.
+    // assignedTo is ALWAYS null here.
+
+    const task = await Task.create({
+      user: req.user.userId,
+
+      assignedTo: null,
+
+      title: title.trim(),
+
+      description:
+        typeof description === "string"
+          ? description.trim()
+          : "",
+
+      category: category || "Other",
+
+      priority: priority || "Medium",
+
+      dueDate: dueDate || null,
+
+      completed: false,
+    });
+
+    const populatedTask =
+      await Task.findById(task._id)
+        .populate(
+          "user",
+          "name email roles role"
+        )
+        .populate(
+          "assignedTo",
+          "name email roles role"
+        );
+
+    return res.status(201).json({
+      success: true,
+      message: "Task created successfully",
+      task: populatedTask,
+    });
+  } catch (error) {
+    console.error(
+      "Create Task Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to create task",
+      error: error.message,
+    });
+  }
+});
+
+// ================= UPDATE TASK =================
+
+router.put("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid task ID",
+      });
+    }
+
+    const task = await Task.findById(id);
+
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        message: "Task not found",
+      });
+    }
+
+    const currentUserId =
+      req.user.userId.toString();
+
+    const ownerId =
+      task.user.toString();
+
+    const assignedUserId =
+      task.assignedTo
+        ? task.assignedTo.toString()
+        : null;
+
+    // Only owner or assigned user can update
+    if (
+      currentUserId !== ownerId &&
+      currentUserId !== assignedUserId
+    ) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "You are not allowed to update this task",
+      });
+    }
+
     const {
       title,
       description,
@@ -109,286 +239,132 @@ router.post("/", async (req, res) => {
     } = req.body;
 
     if (
-      typeof title !== "string" ||
-      !title.trim()
+      title !== undefined &&
+      (!title || !title.trim())
     ) {
       return res.status(400).json({
-        message:
-          "Task title is required",
+        success: false,
+        message: "Task title is required",
       });
     }
 
-    const selectedCategory =
-      CATEGORIES.includes(category)
-        ? category
-        : "Other";
+    if (title !== undefined) {
+      task.title = title.trim();
+    }
 
-    const selectedPriority =
-      PRIORITIES.includes(priority)
-        ? priority
-        : "Medium";
+    if (description !== undefined) {
+      task.description =
+        typeof description === "string"
+          ? description.trim()
+          : "";
+    }
 
-    // Normal user can NEVER assign
-    // a task through this endpoint.
+    if (category !== undefined) {
+      task.category = category;
+    }
 
-    const task =
-      await Task.create({
-        user: req.user.userId,
+    if (priority !== undefined) {
+      task.priority = priority;
+    }
 
-        assignedTo: null,
+    if (dueDate !== undefined) {
+      task.dueDate = dueDate || null;
+    }
 
-        title: title.trim(),
+    if (completed !== undefined) {
+      task.completed = Boolean(completed);
+    }
 
-        description:
-          typeof description ===
-          "string"
-            ? description.trim()
-            : "",
+    // IMPORTANT:
+    // assignedTo is never changed from this route.
+    // Assignment is controlled by Admin route only.
 
-        category:
-          selectedCategory,
+    await task.save();
 
-        priority:
-          selectedPriority,
-
-        dueDate:
-          dueDate || null,
-
-        completed:
-          completed === true,
-      });
-
-    const populatedTask =
+    const updatedTask =
       await Task.findById(task._id)
         .populate(
           "user",
-          "name email role"
+          "name email roles role"
         )
         .populate(
           "assignedTo",
-          "name email role"
+          "name email roles role"
         );
 
-    res.status(201).json({
-      message:
-        "Task created successfully",
-
-      task: populatedTask,
+    return res.json({
+      success: true,
+      message: "Task updated successfully",
+      task: updatedTask,
     });
   } catch (error) {
     console.error(
-      "Create Task Error:",
+      "Update Task Error:",
       error
     );
 
-    res.status(500).json({
-      message:
-        "Failed to create task",
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update task",
       error: error.message,
     });
   }
 });
 
-// ================= UPDATE TASK =================
-
-router.put(
-  "/:id",
-  async (req, res) => {
-    try {
-      const { id } = req.params;
-
-      if (
-        !mongoose.Types.ObjectId.isValid(
-          id
-        )
-      ) {
-        return res.status(400).json({
-          message:
-            "Invalid task ID",
-        });
-      }
-
-      const task =
-        await Task.findById(id);
-
-      if (!task) {
-        return res.status(404).json({
-          message:
-            "Task not found",
-        });
-      }
-
-      const currentUserId =
-        String(req.user.userId);
-
-      const isOwner =
-        String(task.user) ===
-        currentUserId;
-
-      const isAssignedUser =
-        task.assignedTo &&
-        String(
-          task.assignedTo
-        ) === currentUserId;
-
-      if (
-        !isOwner &&
-        !isAssignedUser
-      ) {
-        return res.status(403).json({
-          message:
-            "You are not allowed to update this task",
-        });
-      }
-
-      const {
-        title,
-        description,
-        category,
-        priority,
-        dueDate,
-        completed,
-      } = req.body;
-
-      if (
-        typeof title !== "string" ||
-        !title.trim()
-      ) {
-        return res.status(400).json({
-          message:
-            "Task title is required",
-        });
-      }
-
-      task.title =
-        title.trim();
-
-      task.description =
-        typeof description ===
-        "string"
-          ? description.trim()
-          : "";
-
-      task.category =
-        CATEGORIES.includes(
-          category
-        )
-          ? category
-          : task.category ||
-            "Other";
-
-      task.priority =
-        PRIORITIES.includes(
-          priority
-        )
-          ? priority
-          : task.priority ||
-            "Medium";
-
-      task.dueDate =
-        dueDate || null;
-
-      task.completed =
-        completed === true;
-
-      // IMPORTANT:
-      // assignedTo is NOT changed here.
-      // Only Admin Dashboard can assign.
-
-      await task.save();
-
-      const populatedTask =
-        await Task.findById(
-          task._id
-        )
-          .populate(
-            "user",
-            "name email role"
-          )
-          .populate(
-            "assignedTo",
-            "name email role"
-          );
-
-      res.json({
-        message:
-          "Task updated successfully",
-
-        task: populatedTask,
-      });
-    } catch (error) {
-      console.error(
-        "Update Task Error:",
-        error
-      );
-
-      res.status(500).json({
-        message:
-          "Failed to update task",
-      });
-    }
-  }
-);
-
 // ================= DELETE TASK =================
 
-router.delete(
-  "/:id",
-  async (req, res) => {
-    try {
-      const { id } = req.params;
+router.delete("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
 
-      if (
-        !mongoose.Types.ObjectId.isValid(
-          id
-        )
-      ) {
-        return res.status(400).json({
-          message:
-            "Invalid task ID",
-        });
-      }
-
-      const task =
-        await Task.findById(id);
-
-      if (!task) {
-        return res.status(404).json({
-          message:
-            "Task not found",
-        });
-      }
-
-      if (
-        String(task.user) !==
-        String(req.user.userId)
-      ) {
-        return res.status(403).json({
-          message:
-            "Only the task owner can delete this task",
-        });
-      }
-
-      await Task.findByIdAndDelete(
-        id
-      );
-
-      res.json({
-        message:
-          "Task deleted successfully",
-      });
-    } catch (error) {
-      console.error(
-        "Delete Task Error:",
-        error
-      );
-
-      res.status(500).json({
-        message:
-          "Failed to delete task",
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid task ID",
       });
     }
+
+    const task = await Task.findById(id);
+
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        message: "Task not found",
+      });
+    }
+
+    const currentUserId =
+      req.user.userId.toString();
+
+    const ownerId =
+      task.user.toString();
+
+    // Only task owner can delete.
+    if (currentUserId !== ownerId) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Only the task owner can delete this task",
+      });
+    }
+
+    await Task.findByIdAndDelete(id);
+
+    return res.json({
+      success: true,
+      message: "Task deleted successfully",
+    });
+  } catch (error) {
+    console.error(
+      "Delete Task Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to delete task",
+    });
   }
-);
+});
 
 module.exports = router;

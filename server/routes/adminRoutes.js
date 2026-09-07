@@ -1,116 +1,18 @@
 const express = require("express");
-const User = require("../models/User");
+const mongoose = require("mongoose");
+
 const Task = require("../models/Task");
+const User = require("../models/User");
+const authMiddleware = require("../middleware/authMiddleware");
+const adminMiddleware = require("../middleware/adminMiddleware");
 
 const router = express.Router();
 
-/* =========================
-   ADMIN DASHBOARD STATS
-========================= */
+// Admin authentication
+router.use(authMiddleware);
+router.use(adminMiddleware);
 
-router.get("/stats", async (req, res) => {
-  try {
-    const totalUsers = await User.countDocuments();
-
-    const totalTasks = await Task.countDocuments();
-
-    const completedTasks = await Task.countDocuments({
-      completed: true,
-    });
-
-    const pendingTasks = await Task.countDocuments({
-      completed: false,
-    });
-
-    const highPriorityTasks = await Task.countDocuments({
-      priority: "High",
-    });
-
-    const mediumPriorityTasks = await Task.countDocuments({
-      priority: "Medium",
-    });
-
-    const lowPriorityTasks = await Task.countDocuments({
-      priority: "Low",
-    });
-
-    res.json({
-      success: true,
-      stats: {
-        totalUsers,
-        totalTasks,
-        completedTasks,
-        pendingTasks,
-        highPriorityTasks,
-        mediumPriorityTasks,
-        lowPriorityTasks,
-      },
-    });
-  } catch (error) {
-    console.error("Admin Stats Error:", error);
-
-    res.status(500).json({
-      success: false,
-      message: "Failed to load admin statistics",
-    });
-  }
-});
-
-/* =========================
-   GET ALL USERS
-========================= */
-
-router.get("/users", async (req, res) => {
-  try {
-    const users = await User.find()
-      .select("-password")
-      .sort({ createdAt: -1 });
-
-    res.json({
-      success: true,
-      count: users.length,
-      users,
-    });
-  } catch (error) {
-    console.error("Admin Users Error:", error);
-
-    res.status(500).json({
-      success: false,
-      message: "Failed to load users",
-    });
-  }
-});
-
-/* =========================
-   GET ALL TASKS
-========================= */
-
-router.get("/tasks", async (req, res) => {
-  try {
-    const tasks = await Task.find()
-      .populate("user", "name email role")
-      .populate("assignedTo", "name email role")
-      .sort({ createdAt: -1 });
-
-    res.json({
-      success: true,
-      count: tasks.length,
-      tasks,
-    });
-  } catch (error) {
-    console.error("Admin Tasks Error:", error);
-
-    res.status(500).json({
-      success: false,
-      message: "Failed to load all tasks",
-    });
-  }
-});
-
-/* =========================
-   CREATE TASK AS ADMIN
-   + ASSIGN TO USER
-========================= */
+// ================= CREATE TASK AS ADMIN =================
 
 router.post("/tasks", async (req, res) => {
   try {
@@ -133,53 +35,89 @@ router.post("/tasks", async (req, res) => {
     let assignedUser = null;
 
     if (assignedTo) {
-      assignedUser = await User.findById(assignedTo);
+      if (!mongoose.Types.ObjectId.isValid(assignedTo)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid assigned user ID",
+        });
+      }
+
+      // Only NORMAL USERS can receive admin-assigned tasks.
+      // Admin accounts are excluded.
+      assignedUser = await User.findOne({
+        _id: assignedTo,
+        roles: { $nin: ["admin"] },
+      });
+
+      // Backward compatibility for old users having role field
+      if (!assignedUser) {
+        assignedUser = await User.findOne({
+          _id: assignedTo,
+          role: "user",
+        });
+      }
 
       if (!assignedUser) {
-        return res.status(404).json({
+        return res.status(403).json({
           success: false,
-          message: "Assigned user not found",
+          message:
+            "Tasks can only be assigned to normal users/students.",
         });
       }
     }
-
-    /* IMPORTANT:
-       JWT stores the user ID as req.user.userId
-    */
 
     const task = await Task.create({
       user: req.user.userId,
       assignedTo: assignedUser
         ? assignedUser._id
         : null,
+
       title: title.trim(),
+
       description:
         typeof description === "string"
           ? description.trim()
           : "",
+
       category: category || "Other",
+
       priority: priority || "Medium",
+
       dueDate: dueDate || null,
+
       completed: false,
     });
 
-    const populatedTask = await Task.findById(task._id)
-      .populate("user", "name email role")
-      .populate("assignedTo", "name email role");
+    const populatedTask =
+      await Task.findById(task._id)
+        .populate(
+          "user",
+          "name email roles role"
+        )
+        .populate(
+          "assignedTo",
+          "name email roles role"
+        );
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
+
       message: assignedUser
         ? `Task created and assigned to ${
-            assignedUser.name || assignedUser.email
+            assignedUser.name ||
+            assignedUser.email
           }`
         : "Task created successfully",
+
       task: populatedTask,
     });
   } catch (error) {
-    console.error("Admin Create Task Error:", error);
+    console.error(
+      "Admin Create Task Error:",
+      error
+    );
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Failed to create task",
       error: error.message,
@@ -187,119 +125,36 @@ router.post("/tasks", async (req, res) => {
   }
 });
 
-/* =========================
-   GET SINGLE USER
-========================= */
+// ================= GET ADMIN TASKS =================
 
-router.get("/users/:id", async (req, res) => {
+router.get("/tasks", async (req, res) => {
   try {
-    const user = await User.findById(req.params.id)
-      .select("-password");
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
-    }
-
-    const userTasks = await Task.find({
-      $or: [
-        { user: user._id },
-        { assignedTo: user._id },
-      ],
+    const tasks = await Task.find({
+      user: req.user.userId,
     })
-      .populate("user", "name email")
-      .populate("assignedTo", "name email")
+      .populate(
+        "user",
+        "name email roles role"
+      )
+      .populate(
+        "assignedTo",
+        "name email roles role"
+      )
       .sort({ createdAt: -1 });
 
-    res.json({
+    return res.json({
       success: true,
-      user,
-      tasks: userTasks,
+      tasks,
     });
   } catch (error) {
-    console.error("Single User Error:", error);
+    console.error(
+      "Admin Get Tasks Error:",
+      error
+    );
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: "Failed to load user details",
-    });
-  }
-});
-
-/* =========================
-   DELETE USER
-========================= */
-
-router.delete("/users/:id", async (req, res) => {
-  try {
-    if (req.params.id === req.user.userId.toString()) {
-      return res.status(400).json({
-        success: false,
-        message: "Admin cannot delete their own account",
-      });
-    }
-
-    const user = await User.findById(req.params.id);
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
-    }
-
-    await Task.deleteMany({
-      $or: [
-        { user: user._id },
-        { assignedTo: user._id },
-      ],
-    });
-
-    await User.findByIdAndDelete(req.params.id);
-
-    res.json({
-      success: true,
-      message: "User and related tasks deleted successfully",
-    });
-  } catch (error) {
-    console.error("Delete User Error:", error);
-
-    res.status(500).json({
-      success: false,
-      message: "Failed to delete user",
-    });
-  }
-});
-
-/* =========================
-   DELETE TASK
-========================= */
-
-router.delete("/tasks/:id", async (req, res) => {
-  try {
-    const task = await Task.findById(req.params.id);
-
-    if (!task) {
-      return res.status(404).json({
-        success: false,
-        message: "Task not found",
-      });
-    }
-
-    await Task.findByIdAndDelete(req.params.id);
-
-    res.json({
-      success: true,
-      message: "Task deleted successfully",
-    });
-  } catch (error) {
-    console.error("Admin Delete Task Error:", error);
-
-    res.status(500).json({
-      success: false,
-      message: "Failed to delete task",
+      message: "Failed to fetch admin tasks",
     });
   }
 });

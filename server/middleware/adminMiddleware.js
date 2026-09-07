@@ -7,7 +7,15 @@ const adminMiddleware = (req, res, next) => {
       });
     }
 
-    if (req.user.role !== "admin") {
+    // New roles system
+    const roles = Array.isArray(req.user.roles)
+      ? req.user.roles
+      : req.user.role
+      ? [req.user.role]
+      : ["user"];
+
+    // Admin role required
+    if (!roles.includes("admin")) {
       return res.status(403).json({
         success: false,
         message: "Access denied. Admin only.",

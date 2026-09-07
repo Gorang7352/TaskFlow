@@ -43,18 +43,22 @@ router.post("/register", async (req, res) => {
         email: normalizedEmail,
       });
 
+    // ================= EXISTING USER =================
+
     if (existingUser) {
-      return res.status(400).json({
-        message: "User already exists",
+      return res.status(409).json({
+        message:
+          "User already exists. Please login instead.",
       });
     }
 
-    // ================= ROLE =================
+    // ================= ROLES =================
 
-    let role = "user";
+    let roles = ["user"];
 
+    // Teacher/Admin registration
     if (accountType === "admin") {
-      if (!adminCode) {
+      if (!adminCode || !adminCode.trim()) {
         return res.status(400).json({
           message:
             "Admin Registration Code is required",
@@ -71,7 +75,8 @@ router.post("/register", async (req, res) => {
         });
       }
 
-      role = "admin";
+      // Admin account also has normal user access
+      roles = ["user", "admin"];
     }
 
     // ================= PASSWORD =================
@@ -85,26 +90,27 @@ router.post("/register", async (req, res) => {
       name: name.trim(),
       email: normalizedEmail,
       password: hashedPassword,
-      role,
+      roles,
     });
 
     res.status(201).json({
       message:
-        role === "admin"
+        roles.includes("admin")
           ? "Teacher / Admin account created successfully. Please login."
           : "Student account created successfully. Please login.",
 
       user: {
         id: user._id,
+        _id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role,
+        roles: user.roles,
       },
     });
   } catch (error) {
     console.error(
       "Register Error:",
-      error.message
+      error
     );
 
     res.status(500).json({
@@ -158,11 +164,33 @@ router.post("/login", async (req, res) => {
       });
     }
 
+    // ================= SAFE ROLES =================
+
+    // Handles old users that may still have
+    // the previous "role" field.
+
+    let roles = [];
+
+    if (Array.isArray(user.roles)) {
+      roles = user.roles;
+    } else if (user.role) {
+      roles = [user.role];
+    } else {
+      roles = ["user"];
+    }
+
+    // Ensure every account has user access
+    if (!roles.includes("user")) {
+      roles.push("user");
+    }
+
+    // ================= JWT =================
+
     const token = jwt.sign(
       {
         userId: user._id,
         email: user.email,
-        role: user.role,
+        roles,
       },
       process.env.JWT_SECRET ||
         "taskflow_secret_key",
@@ -170,6 +198,8 @@ router.post("/login", async (req, res) => {
         expiresIn: "7d",
       }
     );
+
+    // ================= RESPONSE =================
 
     res.json({
       message: "Login successful",
@@ -181,13 +211,13 @@ router.post("/login", async (req, res) => {
         _id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role,
+        roles,
       },
     });
   } catch (error) {
     console.error(
       "Login Error:",
-      error.message
+      error
     );
 
     res.status(500).json({

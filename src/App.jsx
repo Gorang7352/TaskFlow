@@ -23,6 +23,23 @@ const CATEGORY_ICONS = {
   Other: "📌",
 };
 
+function normalizeUser(rawUser) {
+  if (!rawUser) return null;
+
+  const roles = Array.isArray(rawUser.roles)
+    ? rawUser.roles
+    : rawUser.role === "admin"
+    ? ["user", "admin"]
+    : ["user"];
+
+  return {
+    ...rawUser,
+    roles: roles.includes("user")
+      ? roles
+      : ["user", ...roles],
+  };
+}
+
 function App() {
   const [token, setToken] = useState(
     localStorage.getItem("taskflowToken") || ""
@@ -30,17 +47,36 @@ function App() {
 
   const [user, setUser] = useState(() => {
     try {
-      return (
-        JSON.parse(
-          localStorage.getItem("taskflowUser")
-        ) || null
+      const storedUser = JSON.parse(
+        localStorage.getItem("taskflowUser")
       );
+
+      return normalizeUser(storedUser);
     } catch {
       return null;
     }
   });
 
-  const [authMode, setAuthMode] = useState("login");
+  /*
+   * Admin account has TWO modes:
+   * User Mode
+   * Admin Mode
+   *
+   * Normal user only has User Mode.
+   */
+  const [activeMode, setActiveMode] = useState(() => {
+    const storedMode =
+      localStorage.getItem(
+        "taskflowActiveMode"
+      );
+
+    return storedMode === "admin"
+      ? "admin"
+      : "user";
+  });
+
+  const [authMode, setAuthMode] =
+    useState("login");
 
   const [authForm, setAuthForm] = useState({
     name: "",
@@ -106,6 +142,16 @@ function App() {
       }
     });
 
+  /* ================= USER ROLES ================= */
+
+  const userRoles = Array.isArray(user?.roles)
+    ? user.roles
+    : user?.role === "admin"
+    ? ["user", "admin"]
+    : ["user"];
+
+  const isAdmin = userRoles.includes("admin");
+
   /* ================= CLOSE NOTIFICATIONS ================= */
 
   useEffect(() => {
@@ -157,6 +203,37 @@ function App() {
         behavior: "smooth",
         block: "start",
       });
+  };
+
+  /* ================= MODE SWITCH ================= */
+
+  const switchToUserMode = () => {
+    setActiveMode("user");
+
+    localStorage.setItem(
+      "taskflowActiveMode",
+      "user"
+    );
+
+    showMessage("Switched to User Mode.");
+  };
+
+  const switchToAdminMode = () => {
+    if (!isAdmin) {
+      showMessage(
+        "Admin access is not available for this account.",
+        "error"
+      );
+
+      return;
+    }
+
+    setActiveMode("admin");
+
+    localStorage.setItem(
+      "taskflowActiveMode",
+      "admin"
+    );
   };
 
   /* ================= API REQUEST ================= */
@@ -331,11 +408,14 @@ function App() {
         );
       }
 
-      const newUser = data.user || {
+      const rawUser = data.user || {
         name: authForm.name,
         email: authForm.email,
-        role: "user",
+        roles: ["user"],
       };
+
+      const normalizedUser =
+        normalizeUser(rawUser);
 
       localStorage.setItem(
         "taskflowToken",
@@ -344,11 +424,21 @@ function App() {
 
       localStorage.setItem(
         "taskflowUser",
-        JSON.stringify(newUser)
+        JSON.stringify(normalizedUser)
+      );
+
+      /*
+       * Every login starts in User Mode.
+       * Admin can manually switch to Admin Mode.
+       */
+      localStorage.setItem(
+        "taskflowActiveMode",
+        "user"
       );
 
       setToken(newToken);
-      setUser(newUser);
+      setUser(normalizedUser);
+      setActiveMode("user");
 
       setAuthForm({
         name: "",
@@ -382,10 +472,15 @@ function App() {
       "taskflowUser"
     );
 
+    localStorage.removeItem(
+      "taskflowActiveMode"
+    );
+
     setToken("");
     setUser(null);
     setTasks([]);
     setUsers([]);
+    setActiveMode("user");
     setShowNotifications(false);
 
     showMessage(
@@ -426,6 +521,15 @@ function App() {
   const fetchUsers = async () => {
     if (!token) return;
 
+    /*
+     * Normal User doesn't need
+     * assignment users.
+     */
+    if (!isAdmin) {
+      setUsers([]);
+      return;
+    }
+
     try {
       const data =
         await request(USERS_API);
@@ -451,7 +555,7 @@ function App() {
       fetchTasks();
       fetchUsers();
     }
-  }, [token]);
+  }, [token, isAdmin]);
 
   /* ================= USER NAME ================= */
 
@@ -647,15 +751,6 @@ function App() {
               form.dueDate || null,
 
             completed: false,
-
-            /*
-             * IMPORTANT:
-             * Normal users NEVER send
-             * assignedTo.
-             *
-             * Backend also forces
-             * assignedTo = null.
-             */
           }),
         }
       );
@@ -724,14 +819,6 @@ function App() {
 
             completed:
               !task.completed,
-
-            /*
-             * assignedTo is intentionally
-             * NOT sent.
-             *
-             * Backend preserves the
-             * existing assignment.
-             */
           }),
         }
       );
@@ -825,12 +912,6 @@ function App() {
 
               completed:
                 !!editingTask.completed,
-
-              /*
-               * IMPORTANT:
-               * Assignment cannot be changed
-               * by normal user.
-               */
             }),
           }
         );
@@ -1283,12 +1364,20 @@ function App() {
 
   /* ================= ADMIN DASHBOARD ================= */
 
-  if (user?.role === "admin") {
+  if (
+    token &&
+    user &&
+    activeMode === "admin" &&
+    isAdmin
+  ) {
     return (
       <AdminDashboard
         user={user}
         token={token}
         onLogout={logout}
+        onSwitchToUser={
+          switchToUserMode
+        }
       />
     );
   }
@@ -1565,6 +1654,20 @@ function App() {
           </nav>
 
           <div className="header-right">
+            {/* ================= MODE SWITCH ================= */}
+
+            {isAdmin && (
+              <button
+                className="admin-mode-btn"
+                onClick={
+                  switchToAdminMode
+                }
+                title="Switch to Admin Mode"
+              >
+                👨‍🏫 Admin Mode
+              </button>
+            )}
+
             {/* ================= NOTIFICATION ================= */}
 
             <div className="notification-wrapper">
