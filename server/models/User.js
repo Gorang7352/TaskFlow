@@ -22,10 +22,24 @@ const userSchema = new mongoose.Schema(
       minlength: 6,
     },
 
+    // Main roles
     roles: {
       type: [String],
       enum: ["user", "admin"],
       default: ["user"],
+    },
+
+    // Backward compatibility
+    role: {
+      type: String,
+      enum: ["user", "admin"],
+    },
+
+    // Admin whose user-list this Normal User belongs to
+    assignedAdmin: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
     },
   },
   {

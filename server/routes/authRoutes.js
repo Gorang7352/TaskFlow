@@ -6,10 +6,84 @@ const User = require("../models/User");
 
 const router = express.Router();
 
-const ADMIN_REGISTRATION_CODE =
-  process.env.ADMIN_REGISTRATION_CODE || "COLLEGE2026";
+// =====================================================
+// HELPER: GET USER ROLES
+// =====================================================
 
-// ================= REGISTER =================
+const getRoles = (user) => {
+  let roles = [];
+
+  // New roles system
+  if (Array.isArray(user?.roles)) {
+    roles = [...user.roles];
+  }
+
+  // Old role system - backward compatibility
+  else if (user?.role) {
+    roles = [user.role];
+  }
+
+  // Default normal user
+  else {
+    roles = ["user"];
+  }
+
+  // Admin should always have normal user access also
+  if (roles.includes("admin") && !roles.includes("user")) {
+    roles.unshift("user");
+  }
+
+  // Every normal account must have user access
+  if (!roles.includes("user")) {
+    roles.unshift("user");
+  }
+
+  // Remove duplicates
+  return [...new Set(roles)];
+};
+
+// =====================================================
+// NORMALIZE ACCOUNT TYPE
+// =====================================================
+
+const normalizeAccountType = (accountType) => {
+  if (!accountType) {
+    return "user";
+  }
+
+  const value = String(accountType)
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+
+  // Admin values
+  if (
+    value === "admin" ||
+    value === "teacher / admin" ||
+    value === "teacher/admin" ||
+    value === "teacher admin" ||
+    value === "teacher"
+  ) {
+    return "admin";
+  }
+
+  // Normal user values
+  if (
+    value === "user" ||
+    value === "normal user" ||
+    value === "student / normal user" ||
+    value === "student/normal user" ||
+    value === "student"
+  ) {
+    return "user";
+  }
+
+  return null;
+};
+
+// =====================================================
+// REGISTER
+// =====================================================
 
 router.post("/register", async (req, res) => {
   try {
@@ -17,33 +91,49 @@ router.post("/register", async (req, res) => {
       name,
       email,
       password,
-      accountType,
-      adminCode,
+      accountType = "user",
     } = req.body;
 
-    if (!name || !email || !password) {
+    // ---------------- VALIDATION ----------------
+
+    if (
+      !name?.trim() ||
+      !email?.trim() ||
+      !password
+    ) {
       return res.status(400).json({
-        message:
-          "Name, email and password are required",
+        message: "Name, email and password are required",
       });
     }
 
     if (password.length < 6) {
       return res.status(400).json({
-        message:
-          "Password must be at least 6 characters",
+        message: "Password must be at least 6 characters",
       });
     }
 
+    // =====================================================
+    // NORMALIZE ACCOUNT TYPE
+    // =====================================================
+
+    const finalAccountType =
+      normalizeAccountType(accountType);
+
+    if (!finalAccountType) {
+      return res.status(400).json({
+        message: "Invalid account type",
+      });
+    }
+
+    // ---------------- EMAIL ----------------
+
     const normalizedEmail =
-      email.toLowerCase().trim();
+      email.trim().toLowerCase();
 
     const existingUser =
       await User.findOne({
         email: normalizedEmail,
       });
-
-    // ================= EXISTING USER =================
 
     if (existingUser) {
       return res.status(409).json({
@@ -52,59 +142,72 @@ router.post("/register", async (req, res) => {
       });
     }
 
-    // ================= ROLES =================
+    // =====================================================
+    // ROLES
+    // =====================================================
 
     let roles = ["user"];
+    let role = "user";
 
-    // Teacher/Admin registration
-    if (accountType === "admin") {
-      if (!adminCode || !adminCode.trim()) {
-        return res.status(400).json({
-          message:
-            "Admin Registration Code is required",
-        });
-      }
-
-      if (
-        adminCode.trim() !==
-        ADMIN_REGISTRATION_CODE
-      ) {
-        return res.status(403).json({
-          message:
-            "Invalid Admin Registration Code",
-        });
-      }
-
-      // Admin account also has normal user access
+    // Teacher / Admin
+    if (finalAccountType === "admin") {
       roles = ["user", "admin"];
+      role = "admin";
     }
 
-    // ================= PASSWORD =================
+    // =====================================================
+    // PASSWORD
+    // =====================================================
 
     const hashedPassword =
       await bcrypt.hash(password, 10);
 
-    // ================= CREATE USER =================
+    // =====================================================
+    // CREATE USER
+    // =====================================================
 
     const user = await User.create({
       name: name.trim(),
       email: normalizedEmail,
       password: hashedPassword,
-      roles,
+
+      // New roles system
+      roles: roles,
+
+      // Old role system - backward compatibility
+      role: role,
     });
 
-    res.status(201).json({
+    console.log(
+      "NEW USER CREATED:",
+      user.email,
+      "| accountType:",
+      finalAccountType,
+      "| role:",
+      role,
+      "| roles:",
+      roles
+    );
+
+    // =====================================================
+    // RESPONSE
+    // =====================================================
+
+    return res.status(201).json({
       message:
-        roles.includes("admin")
-          ? "Teacher / Admin account created successfully. Please login."
-          : "Student account created successfully. Please login.",
+        finalAccountType === "admin"
+          ? "Admin account created successfully. Please login."
+          : "Normal User account created successfully. Please login.",
 
       user: {
         id: user._id,
         _id: user._id,
         name: user.name,
         email: user.email,
-        roles: user.roles,
+
+        roles: roles,
+
+        role: role,
       },
     });
   } catch (error) {
@@ -113,14 +216,16 @@ router.post("/register", async (req, res) => {
       error
     );
 
-    res.status(500).json({
+    return res.status(500).json({
       message:
         "Server error during registration",
     });
   }
 });
 
-// ================= LOGIN =================
+// =====================================================
+// LOGIN
+// =====================================================
 
 router.post("/login", async (req, res) => {
   try {
@@ -129,15 +234,24 @@ router.post("/login", async (req, res) => {
       password,
     } = req.body;
 
-    if (!email || !password) {
+    // ---------------- VALIDATION ----------------
+
+    if (
+      !email?.trim() ||
+      !password
+    ) {
       return res.status(400).json({
         message:
           "Email and password are required",
       });
     }
 
+    // ---------------- EMAIL ----------------
+
     const normalizedEmail =
-      email.toLowerCase().trim();
+      email.trim().toLowerCase();
+
+    // ---------------- FIND USER ----------------
 
     const user =
       await User.findOne({
@@ -150,6 +264,8 @@ router.post("/login", async (req, res) => {
           "Invalid email or password",
       });
     }
+
+    // ---------------- PASSWORD CHECK ----------------
 
     const passwordMatch =
       await bcrypt.compare(
@@ -164,33 +280,36 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    // ================= SAFE ROLES =================
+    // =====================================================
+    // GET ROLES
+    // =====================================================
 
-    // Handles old users that may still have
-    // the previous "role" field.
+    const roles = getRoles(user);
 
-    let roles = [];
+    // =====================================================
+    // FINAL ROLE
+    // =====================================================
 
-    if (Array.isArray(user.roles)) {
-      roles = user.roles;
-    } else if (user.role) {
-      roles = [user.role];
-    } else {
-      roles = ["user"];
-    }
+    const finalRole =
+      roles.includes("admin")
+        ? "admin"
+        : "user";
 
-    // Ensure every account has user access
-    if (!roles.includes("user")) {
-      roles.push("user");
-    }
-
-    // ================= JWT =================
+    // =====================================================
+    // JWT
+    // =====================================================
 
     const token = jwt.sign(
       {
-        userId: user._id,
+        userId: user._id.toString(),
+        id: user._id.toString(),
+
         email: user.email,
-        roles,
+
+        roles: roles,
+
+        // Backward compatibility
+        role: finalRole,
       },
       process.env.JWT_SECRET ||
         "taskflow_secret_key",
@@ -199,9 +318,11 @@ router.post("/login", async (req, res) => {
       }
     );
 
-    // ================= RESPONSE =================
+    // =====================================================
+    // RESPONSE
+    // =====================================================
 
-    res.json({
+    return res.json({
       message: "Login successful",
 
       token,
@@ -209,9 +330,13 @@ router.post("/login", async (req, res) => {
       user: {
         id: user._id,
         _id: user._id,
+
         name: user.name,
         email: user.email,
-        roles,
+
+        roles: roles,
+
+        role: finalRole,
       },
     });
   } catch (error) {
@@ -220,11 +345,15 @@ router.post("/login", async (req, res) => {
       error
     );
 
-    res.status(500).json({
+    return res.status(500).json({
       message:
         "Server error during login",
     });
   }
 });
+
+// =====================================================
+// EXPORT
+// =====================================================
 
 module.exports = router;

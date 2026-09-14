@@ -7,9 +7,20 @@ const authMiddleware = require("../middleware/authMiddleware");
 
 const router = express.Router();
 
+// =====================================================
+// AUTHENTICATION
+// =====================================================
+
 router.use(authMiddleware);
 
-// ================= GET TASKS =================
+// =====================================================
+// GET ALL TASKS FOR LOGGED-IN USER
+// =====================================================
+// User ko:
+// 1. Apne banaye tasks
+// 2. Admin dwara assigned tasks
+// dono dikhेंगे.
+// =====================================================
 
 router.get("/", async (req, res) => {
   try {
@@ -37,7 +48,7 @@ router.get("/", async (req, res) => {
     });
   } catch (error) {
     console.error(
-      "Get Tasks Error:",
+      "GET TASKS ERROR:",
       error
     );
 
@@ -48,14 +59,18 @@ router.get("/", async (req, res) => {
   }
 });
 
-// ================= GET NORMAL USERS =================
-// Used by Admin to assign tasks.
-//
-// Admin users are intentionally excluded.
+// =====================================================
+// GET NORMAL USERS FOR ASSIGNMENT
+// =====================================================
+// IMPORTANT:
+// Sirf normal users yahan milenge.
+// Admin ko assign nahi kiya ja sakta.
+// =====================================================
 
 router.get("/users/list", async (req, res) => {
   try {
-    const currentUserId = req.user.userId;
+    const currentUserId =
+      req.user.userId;
 
     const users = await User.find({
       _id: {
@@ -63,35 +78,38 @@ router.get("/users/list", async (req, res) => {
       },
 
       $or: [
+        // New roles system
         {
           roles: {
+            $in: ["user"],
             $nin: ["admin"],
           },
         },
-        {
-          roles: {
-            $exists: false,
-          },
-        },
+
+        // Old users
         {
           role: "user",
         },
       ],
-    })
-      .select("_id name email roles role")
-      .sort({ name: 1 });
+    }).select(
+      "_id name email roles role"
+    );
 
-    // Extra server-side protection:
-    // Never return an admin account in assignment list.
-    const normalUsers = users.filter((user) => {
-      const roles = Array.isArray(user.roles)
-        ? user.roles
-        : user.role
-        ? [user.role]
-        : ["user"];
+    // Extra safety:
+    // Admin ko kabhi return nahi karna
+    const normalUsers = users.filter(
+      (user) => {
+        const roles = Array.isArray(
+          user.roles
+        )
+          ? user.roles
+          : user.role
+          ? [user.role]
+          : ["user"];
 
-      return !roles.includes("admin");
-    });
+        return !roles.includes("admin");
+      }
+    );
 
     return res.json({
       success: true,
@@ -99,21 +117,35 @@ router.get("/users/list", async (req, res) => {
     });
   } catch (error) {
     console.error(
-      "Get Users Error:",
+      "GET USERS ERROR:",
       error
     );
 
     return res.status(500).json({
       success: false,
-      message: "Failed to fetch users",
+      message:
+        "Failed to fetch users",
     });
   }
 });
 
-// ================= CREATE NORMAL USER TASK =================
+// =====================================================
+// CREATE TASK
+// =====================================================
+// Normal User:
+//   apna task create karega
+//   kisi ko assign nahi kar sakta
+//
+// Admin:
+//   Admin Dashboard ke alag endpoint se
+//   normal user ko task assign karega.
+// =====================================================
 
 router.post("/", async (req, res) => {
   try {
+    const userId =
+      req.user.userId;
+
     const {
       title,
       description,
@@ -122,34 +154,38 @@ router.post("/", async (req, res) => {
       dueDate,
     } = req.body;
 
-    if (!title || !title.trim()) {
+    // ---------------- VALIDATION ----------------
+
+    if (!title?.trim()) {
       return res.status(400).json({
         success: false,
-        message: "Task title is required",
+        message:
+          "Task title is required",
       });
     }
 
     // IMPORTANT:
-    // Normal users cannot assign tasks.
-    // assignedTo is ALWAYS null here.
+    // assignedTo intentionally accept nahi kar rahe.
+    // Isliye normal user manually API request bhejkar
+    // kisi ko task assign nahi kar sakta.
 
     const task = await Task.create({
-      user: req.user.userId,
-
+      user: userId,
       assignedTo: null,
 
       title: title.trim(),
 
       description:
-        typeof description === "string"
-          ? description.trim()
-          : "",
+        description?.trim() || "",
 
-      category: category || "Other",
+      category:
+        category || "General",
 
-      priority: priority || "Medium",
+      priority:
+        priority || "Medium",
 
-      dueDate: dueDate || null,
+      dueDate:
+        dueDate || null,
 
       completed: false,
     });
@@ -167,37 +203,56 @@ router.post("/", async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      message: "Task created successfully",
+      message:
+        "Task created successfully",
       task: populatedTask,
     });
   } catch (error) {
     console.error(
-      "Create Task Error:",
+      "CREATE TASK ERROR:",
       error
     );
 
     return res.status(500).json({
       success: false,
-      message: "Failed to create task",
-      error: error.message,
+      message:
+        "Failed to create task",
     });
   }
 });
 
-// ================= UPDATE TASK =================
+// =====================================================
+// UPDATE TASK
+// =====================================================
+// Owner ya assigned user update kar sakta hai.
+//
+// IMPORTANT:
+// Normal User assignedTo change nahi kar sakta.
+// =====================================================
 
 router.put("/:id", async (req, res) => {
   try {
-    const { id } = req.params;
+    const taskId =
+      req.params.id;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    const currentUserId =
+      req.user.userId;
+
+    // ---------------- OBJECT ID CHECK ----------------
+
+    if (
+      !mongoose.Types.ObjectId.isValid(
+        taskId
+      )
+    ) {
       return res.status(400).json({
         success: false,
         message: "Invalid task ID",
       });
     }
 
-    const task = await Task.findById(id);
+    const task =
+      await Task.findById(taskId);
 
     if (!task) {
       return res.status(404).json({
@@ -206,21 +261,25 @@ router.put("/:id", async (req, res) => {
       });
     }
 
-    const currentUserId =
-      req.user.userId.toString();
+    // ---------------- PERMISSION ----------------
 
     const ownerId =
-      task.user.toString();
+      task.user?.toString();
 
     const assignedUserId =
-      task.assignedTo
-        ? task.assignedTo.toString()
-        : null;
+      task.assignedTo?.toString();
 
-    // Only owner or assigned user can update
+    const isOwner =
+      ownerId ===
+      currentUserId.toString();
+
+    const isAssignedUser =
+      assignedUserId ===
+      currentUserId.toString();
+
     if (
-      currentUserId !== ownerId &&
-      currentUserId !== assignedUserId
+      !isOwner &&
+      !isAssignedUser
     ) {
       return res.status(403).json({
         success: false,
@@ -228,6 +287,8 @@ router.put("/:id", async (req, res) => {
           "You are not allowed to update this task",
       });
     }
+
+    // ---------------- SAFE UPDATE ----------------
 
     const {
       title,
@@ -239,45 +300,58 @@ router.put("/:id", async (req, res) => {
     } = req.body;
 
     if (
-      title !== undefined &&
-      (!title || !title.trim())
+      title !== undefined
     ) {
-      return res.status(400).json({
-        success: false,
-        message: "Task title is required",
-      });
+      if (!title?.trim()) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Task title cannot be empty",
+        });
+      }
+
+      task.title =
+        title.trim();
     }
 
-    if (title !== undefined) {
-      task.title = title.trim();
-    }
-
-    if (description !== undefined) {
+    if (
+      description !== undefined
+    ) {
       task.description =
-        typeof description === "string"
-          ? description.trim()
-          : "";
+        description?.trim() || "";
     }
 
-    if (category !== undefined) {
-      task.category = category;
+    if (
+      category !== undefined
+    ) {
+      task.category =
+        category;
     }
 
-    if (priority !== undefined) {
-      task.priority = priority;
+    if (
+      priority !== undefined
+    ) {
+      task.priority =
+        priority;
     }
 
-    if (dueDate !== undefined) {
-      task.dueDate = dueDate || null;
+    if (
+      dueDate !== undefined
+    ) {
+      task.dueDate =
+        dueDate || null;
     }
 
-    if (completed !== undefined) {
-      task.completed = Boolean(completed);
+    if (
+      completed !== undefined
+    ) {
+      task.completed =
+        Boolean(completed);
     }
 
     // IMPORTANT:
-    // assignedTo is never changed from this route.
-    // Assignment is controlled by Admin route only.
+    // assignedTo ko update nahi kar rahe.
+    // Normal User assignment bypass nahi kar sakta.
 
     await task.save();
 
@@ -294,37 +368,52 @@ router.put("/:id", async (req, res) => {
 
     return res.json({
       success: true,
-      message: "Task updated successfully",
+      message:
+        "Task updated successfully",
       task: updatedTask,
     });
   } catch (error) {
     console.error(
-      "Update Task Error:",
+      "UPDATE TASK ERROR:",
       error
     );
 
     return res.status(500).json({
       success: false,
-      message: "Failed to update task",
-      error: error.message,
+      message:
+        "Failed to update task",
     });
   }
 });
 
-// ================= DELETE TASK =================
+// =====================================================
+// DELETE TASK
+// =====================================================
+// Sirf task owner delete kar sakta hai.
+// Assigned normal user delete nahi kar sakta.
+// =====================================================
 
 router.delete("/:id", async (req, res) => {
   try {
-    const { id } = req.params;
+    const taskId =
+      req.params.id;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    const currentUserId =
+      req.user.userId;
+
+    if (
+      !mongoose.Types.ObjectId.isValid(
+        taskId
+      )
+    ) {
       return res.status(400).json({
         success: false,
         message: "Invalid task ID",
       });
     }
 
-    const task = await Task.findById(id);
+    const task =
+      await Task.findById(taskId);
 
     if (!task) {
       return res.status(404).json({
@@ -333,38 +422,46 @@ router.delete("/:id", async (req, res) => {
       });
     }
 
-    const currentUserId =
-      req.user.userId.toString();
-
     const ownerId =
-      task.user.toString();
+      task.user?.toString();
 
-    // Only task owner can delete.
-    if (currentUserId !== ownerId) {
+    // Only owner can delete
+    if (
+      ownerId !==
+      currentUserId.toString()
+    ) {
       return res.status(403).json({
         success: false,
         message:
-          "Only the task owner can delete this task",
+          "Only task owner can delete this task",
       });
     }
 
-    await Task.findByIdAndDelete(id);
+    await Task.findByIdAndDelete(
+      taskId
+    );
 
     return res.json({
       success: true,
-      message: "Task deleted successfully",
+      message:
+        "Task deleted successfully",
     });
   } catch (error) {
     console.error(
-      "Delete Task Error:",
+      "DELETE TASK ERROR:",
       error
     );
 
     return res.status(500).json({
       success: false,
-      message: "Failed to delete task",
+      message:
+        "Failed to delete task",
     });
   }
 });
+
+// =====================================================
+// EXPORT
+// =====================================================
 
 module.exports = router;

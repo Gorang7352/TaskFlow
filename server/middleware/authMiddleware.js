@@ -1,28 +1,40 @@
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 
+// =====================================================
+// AUTHENTICATION MIDDLEWARE
+// =====================================================
+
 const authMiddleware = async (req, res, next) => {
   try {
-    const authHeader = req.headers.authorization;
+    // ---------------- GET TOKEN ----------------
+
+    const authHeader =
+      req.headers.authorization;
 
     if (!authHeader) {
       return res.status(401).json({
-        message: "Access denied. No token provided.",
+        message:
+          "Access denied. No token provided.",
       });
     }
 
-    const parts = authHeader.split(" ");
+    const parts =
+      authHeader.split(" ");
 
     if (
       parts.length !== 2 ||
       parts[0] !== "Bearer"
     ) {
       return res.status(401).json({
-        message: "Invalid token format.",
+        message:
+          "Invalid token format.",
       });
     }
 
     const token = parts[1];
+
+    // ---------------- VERIFY TOKEN ----------------
 
     const decoded = jwt.verify(
       token,
@@ -42,36 +54,53 @@ const authMiddleware = async (req, res, next) => {
       });
     }
 
+    // =================================================
+    // GET CURRENT USER FROM DATABASE
+    // =================================================
+
     const user =
-      await User.findById(userId).select(
-        "-password"
-      );
+      await User.findById(userId)
+        .select("-password");
 
     if (!user) {
       return res.status(401).json({
-        message: "User not found.",
+        message:
+          "User not found.",
       });
     }
 
-    // ================= ROLES =================
+    // =================================================
+    // GET ROLES
+    // =================================================
 
     let roles = [];
 
+    // New roles system
     if (Array.isArray(user.roles)) {
-      roles = user.roles;
-    } else if (user.role) {
-      // Support old accounts
+      roles = [...user.roles];
+    }
+
+    // Old role system
+    else if (user.role) {
       roles = [user.role];
-    } else {
+    }
+
+    // Default
+    else {
       roles = ["user"];
     }
 
-    // Every account has normal user access
+    // Every account has User access
     if (!roles.includes("user")) {
-      roles.push("user");
+      roles.unshift("user");
     }
 
-    // ================= REQUEST USER =================
+    // Remove duplicate roles
+    roles = [...new Set(roles)];
+
+    // =================================================
+    // ATTACH USER TO REQUEST
+    // =================================================
 
     req.user = {
       _id: user._id,
@@ -81,10 +110,9 @@ const authMiddleware = async (req, res, next) => {
       name: user.name,
       email: user.email,
 
-      roles: roles,
+      roles,
 
-      // Compatibility:
-      // admin if account has admin permission
+      // Backward compatibility
       role: roles.includes("admin")
         ? "admin"
         : "user",
