@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-const ADMIN_API = "http://localhost:5000/api/admin";
+const ADMIN_API = "https://taskflow-odcc.onrender.com/api/admin";
 
 function AdminDashboard({
   user,
@@ -49,6 +49,22 @@ function AdminDashboard({
   });
 
   // =====================================================
+  // TODAY DATE
+  // =====================================================
+
+  const getTodayString = () => {
+    const today = new Date();
+
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, "0");
+    const day = String(today.getDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+  };
+
+  const todayDate = getTodayString();
+
+  // =====================================================
   // ROLE HELPERS
   // =====================================================
 
@@ -65,7 +81,45 @@ function AdminDashboard({
   };
 
   const isAdminUser = (person) => {
-    return getRoles(person).includes("admin");
+    return getRoles(person).some(
+      (role) => String(role).toLowerCase() === "admin"
+    );
+  };
+
+  // =====================================================
+  // USER HELPERS
+  // =====================================================
+
+  const getUserId = (person) => {
+    return person?._id || person?.id || "";
+  };
+
+  const getUserName = (person) => {
+    if (!person) return "";
+
+    return (
+      person.name ||
+      person.fullName ||
+      person.username ||
+      ""
+    );
+  };
+
+  const getUserEmail = (person) => {
+    if (!person) return "";
+
+    return person.email || "";
+  };
+
+  const getInitial = (person, fallback = "U") => {
+    const name =
+      person?.name ||
+      person?.fullName ||
+      person?.username ||
+      person?.email ||
+      "";
+
+    return name.charAt(0).toUpperCase() || fallback;
   };
 
   // =====================================================
@@ -130,7 +184,7 @@ function AdminDashboard({
         ? usersData.users
         : [];
 
-      const freeUsers = Array.isArray(
+      const registeredUsers = Array.isArray(
         availableUsersData?.users
       )
         ? availableUsersData.users
@@ -142,20 +196,17 @@ function AdminDashboard({
 
       const highPriorityTasks = allTasks.filter(
         (task) =>
-          String(task?.priority || "").toLowerCase() ===
-          "high"
+          String(task?.priority || "").toLowerCase() === "high"
       ).length;
 
       const mediumPriorityTasks = allTasks.filter(
         (task) =>
-          String(task?.priority || "").toLowerCase() ===
-          "medium"
+          String(task?.priority || "").toLowerCase() === "medium"
       ).length;
 
       const lowPriorityTasks = allTasks.filter(
         (task) =>
-          String(task?.priority || "").toLowerCase() ===
-          "low"
+          String(task?.priority || "").toLowerCase() === "low"
       ).length;
 
       const completedTasks = allTasks.filter(
@@ -172,22 +223,29 @@ function AdminDashboard({
 
       setStats({
         totalUsers:
-          backendStats.totalUsers ?? myUsers.length,
+          backendStats.totalUsers ??
+          myUsers.filter(
+            (person) => !isAdminUser(person)
+          ).length,
 
         totalAdmins:
           backendStats.totalAdmins ?? 0,
 
         totalTasks:
-          backendStats.totalTasks ?? allTasks.length,
+          backendStats.totalTasks ??
+          allTasks.length,
 
         completedTasks:
-          backendStats.completedTasks ?? completedTasks,
+          backendStats.completedTasks ??
+          completedTasks,
 
         pendingTasks:
-          backendStats.pendingTasks ?? pendingTasks,
+          backendStats.pendingTasks ??
+          pendingTasks,
 
         assignedTasks:
-          backendStats.assignedTasks ?? assignedTasks,
+          backendStats.assignedTasks ??
+          assignedTasks,
 
         highPriorityTasks:
           backendStats.highPriorityTasks ??
@@ -203,10 +261,13 @@ function AdminDashboard({
       });
 
       setUsers(myUsers);
-      setAvailableUsers(freeUsers);
+      setAvailableUsers(registeredUsers);
       setTasks(allTasks);
     } catch (error) {
-      console.error("Admin Dashboard Error:", error);
+      console.error(
+        "Admin Dashboard Error:",
+        error
+      );
 
       setMessage(
         error.message ||
@@ -228,12 +289,10 @@ function AdminDashboard({
   // =====================================================
 
   const normalUsers = useMemo(() => {
-    const currentUserId =
-      user?.id || user?._id;
+    const currentUserId = user?.id || user?._id;
 
     return users.filter((person) => {
-      const personId =
-        person?._id || person?.id;
+      const personId = getUserId(person);
 
       if (
         currentUserId &&
@@ -251,52 +310,38 @@ function AdminDashboard({
   }, [users, user]);
 
   // =====================================================
-  // AVAILABLE NORMAL USERS
+  // REGISTERED NORMAL USERS
+  // Used only for Add User
   // =====================================================
 
   const addableNormalUsers = useMemo(() => {
-    return availableUsers.filter(
-      (person) => !isAdminUser(person)
+    const myUserIds = new Set(
+      normalUsers.map((person) =>
+        String(getUserId(person))
+      )
     );
-  }, [availableUsers]);
+
+    return availableUsers.filter((person) => {
+      const personId = getUserId(person);
+
+      if (!personId) {
+        return false;
+      }
+
+      if (isAdminUser(person)) {
+        return false;
+      }
+
+      if (myUserIds.has(String(personId))) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [availableUsers, normalUsers]);
 
   // =====================================================
-  // USER HELPERS
-  // =====================================================
-
-  const getUserName = (person) => {
-    if (!person) return "";
-
-    return (
-      person.name ||
-      person.fullName ||
-      person.username ||
-      ""
-    );
-  };
-
-  const getUserEmail = (person) => {
-    if (!person) return "";
-
-    return person.email || "";
-  };
-
-  const getInitial = (person, fallback = "U") => {
-    const name =
-      person?.name ||
-      person?.fullName ||
-      person?.username ||
-      person?.email ||
-      "";
-
-    return (
-      name.charAt(0).toUpperCase() ||
-      fallback
-    );
-  };
-
-  // =====================================================
-  // DASHBOARD MESSAGE
+  // MESSAGE
   // =====================================================
 
   const showMessage = (text) => {
@@ -328,13 +373,13 @@ function AdminDashboard({
   };
 
   // =====================================================
-  // ADD USER TO ADMIN LIST
+  // ADD USER
   // =====================================================
 
   const addUserToMyList = async (userId) => {
     if (!userId) {
       setAddUserMessage(
-        "This email ID is not registered."
+        "This email is not registered"
       );
       return;
     }
@@ -357,12 +402,17 @@ function AdminDashboard({
 
       showMessage(
         data.message ||
-          "User added to your user list successfully."
+          "User added successfully."
       );
 
       await loadAdminData();
+
+      setActiveTab("users");
     } catch (error) {
-      console.error("Add User Error:", error);
+      console.error(
+        "Add User Error:",
+        error
+      );
 
       setAddUserMessage(
         error.message ||
@@ -374,7 +424,7 @@ function AdminDashboard({
   };
 
   // =====================================================
-  // CHECK USER NAME + EMAIL
+  // CHECK NAME + EMAIL
   // =====================================================
 
   const handleCheckAndAddUser = async (event) => {
@@ -397,35 +447,33 @@ function AdminDashboard({
 
     if (!enteredEmail) {
       setAddUserMessage(
-        "Please enter the user's email ID."
+        "Please enter the user's email."
       );
       return;
     }
 
     const matchedUser =
-      addableNormalUsers.find(
-        (person) => {
-          const personName =
-            getUserName(person)
-              .trim()
-              .toLowerCase();
+      addableNormalUsers.find((person) => {
+        const personName =
+          getUserName(person)
+            .trim()
+            .toLowerCase();
 
-          const personEmail =
-            getUserEmail(person)
-              .trim()
-              .toLowerCase();
+        const personEmail =
+          getUserEmail(person)
+            .trim()
+            .toLowerCase();
 
-          return (
-            personName ===
-              enteredName.toLowerCase() &&
-            personEmail === enteredEmail
-          );
-        }
-      );
+        return (
+          personName ===
+            enteredName.toLowerCase() &&
+          personEmail === enteredEmail
+        );
+      });
 
     if (!matchedUser) {
       setAddUserMessage(
-        "This email ID is not registered. Please ask the user to create an account first."
+        "This email is not registered"
       );
       return;
     }
@@ -434,11 +482,10 @@ function AdminDashboard({
       normalUsers.some(
         (person) =>
           String(
-            person?._id || person?.id
+            getUserId(person)
           ) ===
           String(
-            matchedUser?._id ||
-              matchedUser?.id
+            getUserId(matchedUser)
           )
       );
 
@@ -450,8 +497,7 @@ function AdminDashboard({
     }
 
     await addUserToMyList(
-      matchedUser._id ||
-        matchedUser.id
+      getUserId(matchedUser)
     );
   };
 
@@ -462,9 +508,8 @@ function AdminDashboard({
   const removeUserFromMyList = async (id) => {
     const person = users.find(
       (item) =>
-        String(
-          item?._id || item?.id
-        ) === String(id)
+        String(getUserId(item)) ===
+        String(id)
     );
 
     const personName =
@@ -577,13 +622,26 @@ function AdminDashboard({
       return;
     }
 
+    // Past date validation
+    if (
+      taskForm.dueDate &&
+      taskForm.dueDate < todayDate
+    ) {
+      showMessage(
+        "Due date cannot be in the past."
+      );
+      return;
+    }
+
     const selectedUser =
       normalUsers.find(
         (person) =>
           String(
-            person?._id || person?.id
+            getUserId(person)
           ) ===
-          String(taskForm.assignedTo)
+          String(
+            taskForm.assignedTo
+          )
       );
 
     if (!selectedUser) {
@@ -707,6 +765,27 @@ function AdminDashboard({
       : 0;
 
   // =====================================================
+  // DATE FORMAT
+  // =====================================================
+
+  const formatDate = (date) => {
+    if (!date) return "—";
+
+    const parsedDate =
+      new Date(date);
+
+    if (
+      Number.isNaN(
+        parsedDate.getTime()
+      )
+    ) {
+      return "—";
+    }
+
+    return parsedDate.toLocaleDateString();
+  };
+
+  // =====================================================
   // RENDER
   // =====================================================
 
@@ -741,7 +820,6 @@ function AdminDashboard({
             </div>
 
             <div>
-
               <strong>
                 {user?.name ||
                   user?.email ||
@@ -751,7 +829,6 @@ function AdminDashboard({
               <small>
                 {user?.email || ""}
               </small>
-
             </div>
 
           </div>
@@ -813,7 +890,7 @@ function AdminDashboard({
 
         </section>
 
-        {/* DASHBOARD MESSAGE */}
+        {/* MESSAGE */}
 
         {message && (
           <div className="admin-message">
@@ -886,7 +963,6 @@ function AdminDashboard({
         ================================================= */}
 
         {loading ? (
-
           <div className="admin-loading">
 
             <div className="admin-spinner"></div>
@@ -896,9 +972,7 @@ function AdminDashboard({
             </p>
 
           </div>
-
         ) : (
-
           <>
 
             {/* =================================================
@@ -906,10 +980,11 @@ function AdminDashboard({
             ================================================= */}
 
             {activeTab === "overview" && (
-
               <>
 
                 <section className="admin-stats-grid">
+
+                  {/* MY USERS */}
 
                   <div className="admin-stat-card">
 
@@ -923,29 +998,13 @@ function AdminDashboard({
                       </span>
 
                       <strong>
-                        {stats.totalUsers}
+                        {normalUsers.length}
                       </strong>
                     </div>
 
                   </div>
 
-                  <div className="admin-stat-card">
-
-                    <div className="admin-stat-icon">
-                      👑
-                    </div>
-
-                    <div>
-                      <span>
-                        Total Admins
-                      </span>
-
-                      <strong>
-                        {stats.totalAdmins}
-                      </strong>
-                    </div>
-
-                  </div>
+                  {/* MY TASKS */}
 
                   <div className="admin-stat-card">
 
@@ -964,6 +1023,8 @@ function AdminDashboard({
                     </div>
 
                   </div>
+
+                  {/* PENDING */}
 
                   <div className="admin-stat-card">
 
@@ -994,7 +1055,6 @@ function AdminDashboard({
                     <div className="panel-heading">
 
                       <div>
-
                         <h2>
                           Task Completion
                         </h2>
@@ -1002,7 +1062,6 @@ function AdminDashboard({
                         <p>
                           Your task completion rate
                         </p>
-
                       </div>
 
                       <strong className="completion-number">
@@ -1050,7 +1109,6 @@ function AdminDashboard({
                     <div className="panel-heading">
 
                       <div>
-
                         <h2>
                           Priority Statistics
                         </h2>
@@ -1058,7 +1116,6 @@ function AdminDashboard({
                         <p>
                           Your tasks by priority
                         </p>
-
                       </div>
 
                     </div>
@@ -1140,7 +1197,6 @@ function AdminDashboard({
                   </div>
 
                   {tasks.length === 0 ? (
-
                     <div className="empty-admin">
 
                       <span>
@@ -1152,9 +1208,7 @@ function AdminDashboard({
                       </p>
 
                     </div>
-
                   ) : (
-
                     <div className="recent-task-list">
 
                       {tasks
@@ -1163,7 +1217,10 @@ function AdminDashboard({
 
                           <div
                             className="recent-task"
-                            key={task._id}
+                            key={
+                              task._id ||
+                              task.id
+                            }
                           >
 
                             <div>
@@ -1177,11 +1234,7 @@ function AdminDashboard({
                                 Assigned to{" "}
                                 {getUserName(
                                   task.assignedTo
-                                ) ||
-                                  getUserEmail(
-                                    task.assignedTo
-                                  ) ||
-                                  "User"}
+                                ) || "User"}
                               </small>
 
                             </div>
@@ -1217,13 +1270,11 @@ function AdminDashboard({
                         ))}
 
                     </div>
-
                   )}
 
                 </section>
 
               </>
-
             )}
 
             {/* =================================================
@@ -1231,7 +1282,6 @@ function AdminDashboard({
             ================================================= */}
 
             {activeTab === "users" && (
-
               <section className="admin-panel">
 
                 <div className="panel-heading">
@@ -1269,7 +1319,6 @@ function AdminDashboard({
                 </div>
 
                 {normalUsers.length === 0 ? (
-
                   <div className="empty-admin">
 
                     <span>
@@ -1290,9 +1339,7 @@ function AdminDashboard({
                     </button>
 
                   </div>
-
                 ) : (
-
                   <div className="admin-table-wrapper">
 
                     <table className="admin-table">
@@ -1315,8 +1362,7 @@ function AdminDashboard({
                           (person) => {
 
                             const personId =
-                              person?._id ||
-                              person?.id;
+                              getUserId(person);
 
                             const personName =
                               getUserName(
@@ -1329,7 +1375,6 @@ function AdminDashboard({
                               );
 
                             return (
-
                               <tr
                                 key={personId}
                               >
@@ -1349,18 +1394,8 @@ function AdminDashboard({
 
                                       <strong>
                                         {personName ||
-                                          personEmail ||
                                           "User"}
                                       </strong>
-
-                                      {personName &&
-                                        personEmail && (
-                                          <small>
-                                            {
-                                              personEmail
-                                            }
-                                          </small>
-                                        )}
 
                                     </div>
 
@@ -1382,13 +1417,9 @@ function AdminDashboard({
                                 </td>
 
                                 <td>
-
-                                  {person.createdAt
-                                    ? new Date(
-                                        person.createdAt
-                                      ).toLocaleDateString()
-                                    : "—"}
-
+                                  {formatDate(
+                                    person.createdAt
+                                  )}
                                 </td>
 
                                 <td>
@@ -1418,7 +1449,6 @@ function AdminDashboard({
                                 </td>
 
                               </tr>
-
                             );
                           }
                         )}
@@ -1428,11 +1458,9 @@ function AdminDashboard({
                     </table>
 
                   </div>
-
                 )}
 
               </section>
-
             )}
 
             {/* =================================================
@@ -1440,7 +1468,6 @@ function AdminDashboard({
             ================================================= */}
 
             {activeTab === "tasks" && (
-
               <section className="admin-panel">
 
                 <div className="panel-heading">
@@ -1464,8 +1491,6 @@ function AdminDashboard({
                       {tasks.length} Tasks
                     </span>
 
-                    {/* NEVER DISABLED */}
-
                     <button
                       className="admin-create-task-btn"
                       onClick={
@@ -1480,7 +1505,6 @@ function AdminDashboard({
                 </div>
 
                 {tasks.length === 0 ? (
-
                   <div className="empty-admin">
 
                     <span>
@@ -1501,9 +1525,7 @@ function AdminDashboard({
                     </button>
 
                   </div>
-
                 ) : (
-
                   <div className="admin-table-wrapper">
 
                     <table className="admin-table">
@@ -1514,6 +1536,7 @@ function AdminDashboard({
                           <th>Task</th>
                           <th>Created By</th>
                           <th>Assigned To</th>
+                          <th>Due Date</th>
                           <th>Priority</th>
                           <th>Status</th>
                           <th>Action</th>
@@ -1536,25 +1559,17 @@ function AdminDashboard({
                               createdBy
                             );
 
-                          const createdByEmail =
-                            getUserEmail(
-                              createdBy
-                            );
-
                           const assignedName =
                             getUserName(
                               assignedTo
                             );
 
-                          const assignedEmail =
-                            getUserEmail(
-                              assignedTo
-                            );
-
                           return (
-
                             <tr
-                              key={task._id}
+                              key={
+                                task._id ||
+                                task.id
+                              }
                             >
 
                               <td>
@@ -1581,18 +1596,8 @@ function AdminDashboard({
 
                                   <strong>
                                     {createdByName ||
-                                      createdByEmail ||
                                       "Admin"}
                                   </strong>
-
-                                  {createdByName &&
-                                    createdByEmail && (
-                                      <small>
-                                        {
-                                          createdByEmail
-                                        }
-                                      </small>
-                                    )}
 
                                 </div>
 
@@ -1600,35 +1605,23 @@ function AdminDashboard({
 
                               <td>
 
-                                {assignedTo ? (
-
+                                {assignedTo &&
+                                assignedName ? (
                                   <div className="task-person">
 
                                     <strong>
-                                      {assignedName ||
-                                        assignedEmail ||
-                                        "User"}
+                                      {assignedName}
                                     </strong>
 
-                                    {assignedName &&
-                                      assignedEmail && (
-                                        <small>
-                                          {
-                                            assignedEmail
-                                          }
-                                        </small>
-                                      )}
-
                                   </div>
+                                ) : null}
 
-                                ) : (
+                              </td>
 
-                                  <span className="no-assignee">
-                                    No Assignee
-                                  </span>
-
+                              <td>
+                                {formatDate(
+                                  task.dueDate
                                 )}
-
                               </td>
 
                               <td>
@@ -1667,7 +1660,8 @@ function AdminDashboard({
                                   className="delete-btn"
                                   onClick={() =>
                                     deleteTask(
-                                      task._id
+                                      task._id ||
+                                        task.id
                                     )
                                   }
                                 >
@@ -1677,7 +1671,6 @@ function AdminDashboard({
                               </td>
 
                             </tr>
-
                           );
                         })}
 
@@ -1686,15 +1679,12 @@ function AdminDashboard({
                     </table>
 
                   </div>
-
                 )}
 
               </section>
-
             )}
 
           </>
-
         )}
 
       </main>
@@ -1704,7 +1694,6 @@ function AdminDashboard({
       ===================================================== */}
 
       {showAddUserModal && (
-
         <div
           className="admin-modal-overlay"
           onMouseDown={(event) => {
@@ -1773,10 +1762,13 @@ function AdminDashboard({
                   type="text"
                   value={addUserName}
                   onChange={(event) => {
+
                     setAddUserName(
                       event.target.value
                     );
+
                     setAddUserMessage("");
+
                   }}
                   placeholder="Enter user name"
                   required
@@ -1798,10 +1790,13 @@ function AdminDashboard({
                   type="email"
                   value={addUserEmail}
                   onChange={(event) => {
+
                     setAddUserEmail(
                       event.target.value
                     );
+
                     setAddUserMessage("");
+
                   }}
                   placeholder="Enter user email ID"
                   required
@@ -1809,11 +1804,9 @@ function AdminDashboard({
 
               </div>
 
-              {/* ERROR / SUCCESS MESSAGE
-                  THIS IS INSIDE MODAL */}
+              {/* ERROR */}
 
               {addUserMessage && (
-
                 <div
                   style={{
                     marginTop: "-4px",
@@ -1832,7 +1825,6 @@ function AdminDashboard({
                 >
                   {addUserMessage}
                 </div>
-
               )}
 
               {/* INFO */}
@@ -1845,9 +1837,7 @@ function AdminDashboard({
 
                 <p>
                   Only registered Normal Users
-                  can be added. If the email ID
-                  is not registered, the user will
-                  not be added.
+                  can be added to your user list.
                 </p>
 
               </div>
@@ -1884,7 +1874,6 @@ function AdminDashboard({
           </div>
 
         </div>
-
       )}
 
       {/* =====================================================
@@ -1892,7 +1881,6 @@ function AdminDashboard({
       ===================================================== */}
 
       {showCreateModal && (
-
         <div
           className="admin-modal-overlay"
           onMouseDown={(event) => {
@@ -1930,6 +1918,7 @@ function AdminDashboard({
               </div>
 
               <button
+                type="button"
                 className="admin-modal-close"
                 onClick={
                   closeCreateModal
@@ -2089,10 +2078,22 @@ function AdminDashboard({
                     value={
                       taskForm.dueDate
                     }
+                    min={todayDate}
                     onChange={
                       handleTaskInput
                     }
                   />
+
+                  <small
+                    style={{
+                      display: "block",
+                      marginTop: "6px",
+                      color: "#64748b",
+                      fontSize: "12px",
+                    }}
+                  >
+                    Today or a future date only
+                  </small>
 
                 </div>
 
@@ -2116,7 +2117,7 @@ function AdminDashboard({
 
                     <option value="">
                       {normalUsers.length === 0
-                        ? "No My User Added"
+                        ? "Add User First"
                         : "Select My User"}
                     </option>
 
@@ -2124,28 +2125,17 @@ function AdminDashboard({
                       (person) => {
 
                         const personId =
-                          person?._id ||
-                          person?.id;
+                          getUserId(person);
 
                         return (
-
                           <option
                             key={personId}
                             value={personId}
                           >
                             {getUserName(
                               person
-                            )
-                              ? `${getUserName(
-                                  person
-                                )} — ${getUserEmail(
-                                  person
-                                )}`
-                              : getUserEmail(
-                                  person
-                                )}
+                            ) || "User"}
                           </option>
-
                         );
                       }
                     )}
@@ -2165,11 +2155,10 @@ function AdminDashboard({
                 </span>
 
                 <p>
-                  You can assign tasks only to
-                  Normal Users added to your own
-                  user list.
+                  Tasks can be assigned only to
+                  Normal Users in your user list.
                   {normalUsers.length === 0 &&
-                    " Add a Normal User first to assign this task."}
+                    " Add a user first."}
                 </p>
 
               </div>
@@ -2195,7 +2184,8 @@ function AdminDashboard({
                   type="submit"
                   className="admin-submit-btn"
                   disabled={
-                    creatingTask
+                    creatingTask ||
+                    normalUsers.length === 0
                   }
                 >
                   {creatingTask
@@ -2210,7 +2200,6 @@ function AdminDashboard({
           </div>
 
         </div>
-
       )}
 
       {/* =================================================
